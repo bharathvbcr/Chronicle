@@ -31,16 +31,12 @@ jobs:
           pip install -e ".[dev]"
       - name: Ruff
         run: ruff check pipeline tests
-      - name: Pytest (focused audit / API / journal)
-        run: >
-          pytest -q
-          tests/test_lan_auth_amend_urls.py
-          tests/test_phase4_journal.py
-          tests/test_refinement_pipeline.py::test_lan_auth_requires_token_on_vault_routes
-          tests/test_api_journal_amend.py
-          tests/test_dual_read_golden.py
-          tests/test_phase0_rails.py
-          tests/test_url_allowlist.py
+      # Run the whole suite, not a curated list. The previous explicit file list
+      # silently excluded every test added after it was written -- including the
+      # guards that exist to fail when someone re-enables Linux bundling or
+      # hardcodes repo names. A guard that never runs is worse than no guard.
+      - name: Pytest
+        run: pytest -q
 
   contract-sync:
     runs-on: ubuntu-latest
