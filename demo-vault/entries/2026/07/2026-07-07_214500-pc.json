@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "2026-07-07_214500-pc",
+  "ts": "2026-07-07T21:45:00+05:30",
+  "type": "idea",
+  "text": "Lantern should show project notes beside journal topics. Import knowledge.json as a second source.",
+  "tags": [
+    "idea",
+    "lantern"
+  ],
+  "images": [],
+  "mood": 5,
+  "processed": true
+}

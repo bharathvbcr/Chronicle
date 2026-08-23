@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/entry.schema.json",
+  "title": "Chronicle Entry v1.11",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "version",
+    "id",
+    "ts",
+    "type",
+    "text",
+    "tags",
+    "images",
+    "processed"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Entry schema version"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{6}-(an|pc)(_[0-9]+)?$",
+      "description": "yyyy-MM-dd_HHmmss-<dev> with optional _N collision suffix"
+    },
+    "ts": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO-8601 timestamp with offset"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "log",
+        "idea",
+        "dream",
+        "reflection"
+      ]
+    },
+    "text": {
+      "type": "string",
+      "description": "Empty string when text_enc is present. May be empty when audio is present (filled by pipeline transcription). After filed=true, frozen provenance; prose SoT is the MD block."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(_attachments|img)/\\d{4}/\\d{2}/.+"
+      }
+    },
+    "audio": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(_attachments|audio)/\\d{4}/\\d{2}/.+\\.m4a$"
+      },
+      "description": "Optional voice note paths"
+    },
+    "mood": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 5
+    },
+    "processed": {
+      "type": "boolean",
+      "description": "True when file-ready: (no audio) OR (text non-empty)"
+    },
+    "filed": {
+      "type": "boolean",
+      "description": "True after MD block written to 40-Journal; optional until file-once"
+    },
+    "filed_content_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "SHA-256 of fenced block body; amend gate compares on-disk hash"
+    },
+    "filed_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Vault-relative journal path, e.g. 40-Journal/YYYY-MM-DD.md"
+    },
+    "prose_edited": {
+      "type": "boolean",
+      "description": "True after the fence body was amended by a user via serve PATCH /journal/entries/{id}; pipeline never re-renders this block from JSON (insert-if-missing still applies)"
+    },
+    "text_enc": {
+      "type": "object",
+      "description": "E2EE blob replacing plaintext text (v1.11). Present only when encryption is enabled; `text` is then an empty string. {v:1, nonce: b64, ct: b64} AES-256-GCM under the vault key (PBKDF2-HmacSHA256 params in config.json e2ee block). Unknown to older apps \u2014 preserved on round-trip.",
+      "properties": {
+        "v": {
+          "type": "integer",
+          "const": 1
+        },
+        "nonce": {
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "ct": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
+      },
+      "required": [
+        "v",
+        "nonce",
+        "ct"
+      ]
+    }
+  },
+  "description": null
+}

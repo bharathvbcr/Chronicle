@@ -1,0 +1,3 @@
+{"op":"pin","ts":"2026-07-09T10:00:00+05:30","device":"pc","node":"topic:work"}
+{"op":"create_concept","ts":"2026-07-09T10:01:00+05:30","device":"pc","id":"concept:startup-idea","label":"Startup idea"}
+{"op":"link","ts":"2026-07-09T10:02:00+05:30","device":"pc","from":"entry:2026-07-09_090015-an","to":"concept:startup-idea","rel":"manual"}

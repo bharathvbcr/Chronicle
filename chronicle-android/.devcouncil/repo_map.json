@@ -1,0 +1,1038 @@
+{
+  "candidate_files": [],
+  "content_fingerprint": "09f1462829228bd1d1851b115e73c665a338dba8",
+  "dead_symbol_candidates": [
+    "app/src/main/java/com/chronicle/app/MindMapScreen.kt::Offset.times",
+    "app/src/main/java/com/chronicle/app/MindMapScreen.kt::Offset.div"
+  ],
+  "dependency_risks": [],
+  "dependents": {},
+  "dependents_total": {},
+  "entry_roots": [],
+  "files": [
+    {
+      "area": ".",
+      "kind": "code",
+      "language": "markdown",
+      "path": "AGENTS.md",
+      "summary": ""
+    },
+    {
+      "area": ".",
+      "kind": "code",
+      "language": "markdown",
+      "path": "CLAUDE.md",
+      "summary": ""
+    },
+    {
+      "area": ".",
+      "kind": "code",
+      "language": "markdown",
+      "path": "CONTRACT.md",
+      "summary": ""
+    },
+    {
+      "area": ".",
+      "kind": "code",
+      "language": "markdown",
+      "path": "README.md",
+      "summary": ""
+    },
+    {
+      "area": "app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/build.gradle.kts",
+      "summary": ""
+    },
+    {
+      "area": "app/src/androidTest/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/androidTest/java/com/chronicle/app/ExampleInstrumentedTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/BiometricHelper.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/BrainScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/CaptureScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/CaptureTextHelpers.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/Entry.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/FirstRunScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/JournalFences.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/KnowledgePathMap.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/MacQrScanner.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/MainActivity.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/MainViewModel.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/MindMapScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/MoodFaces.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/NoteFrontmatter.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/NoteModels.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/NotesScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/PortfolioScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/SafStorage.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/SecurePrefs.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/SettingsScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/TagHelpers.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/TimelineChrome.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/TimelinePeriod.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/TimelineScreen.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/TimelineTab.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/VaultRepository.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/VaultSyncHelpers.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/VoiceRecorder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ai",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ai/GenAiService.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/brain",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/brain/BrainModels.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/brain",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/brain/CapGraphNodes.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/brain",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/brain/ForceLayout.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/e2ee",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/e2ee/E2eeCrypto.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/e2ee",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/e2ee/E2eeManager.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/health",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/health/HealthConnectManager.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/health",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/health/HealthModels.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/health",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/health/HealthSyncWorker.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/health",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/health/PermissionsRationaleActivity.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/net/CloudLlmClient.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/net/LanOutboxWorker.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/net/NsdHelper.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/net/ServeClient.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/net/ServeEventsClient.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/reminder",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/reminder/ReminderReceiver.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/reminder",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/reminder/ReminderScheduler.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/share",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/share/ShareActivity.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/components",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/components/EmptyState.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/components",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/components/PageHeader.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/components",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/components/Shimmer.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownBody.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownEditHelpers.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownLiveStyle.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownNoteEditor.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownToolbar.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/notes",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/notes/JournalFencePane.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/notes",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/notes/KbNoteTree.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/notes",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/notes/OfflineJournalFencePane.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/theme",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/theme/Color.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/theme",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/theme/EntryTypeIcons.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/theme",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/theme/MotionSpec.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/theme",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/theme/Theme.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/theme",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/ui/theme/Type.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/vm/BrainStateHolder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/vm/CaptureStateHolder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/vm/HealthStateHolder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/vm/NotesStateHolder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/vm/SettingsStateHolder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/vm/TimelineStateHolder.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/widget",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/widget/QuickCaptureWidget.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/widget",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/main/java/com/chronicle/app/widget/QuickCaptureWorker.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/CaptureTextHelpersTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/CurationOverlayTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/EntryE2eeTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/EntrySchemaTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ExampleUnitTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/JournalFencesTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/KbNotePathTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/KnowledgePathMapTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/MediaDualReadCandidatesTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/NoteFrontmatterStripTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/NoteFrontmatterTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ParseWikilinksTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/PortfolioBulletTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/TagHelpersTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/TimelineDateGroupingTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/TimelinePeriodTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/UriPermissionMatchTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/VaultSyncHelpersTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/VaultWriteHelpersTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/ai",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ai/GenAiParseTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/ai",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ai/GenAiPeriodDigestTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/brain",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/brain/CapGraphNodesTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/brain",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/brain/ForceLayoutTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/e2ee",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/e2ee/E2eeCryptoTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/e2ee",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/e2ee/E2eeManagerAdoptTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/health",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/health/HealthModelsTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/CloudLlmClientTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/LanOutboxStoreTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/ServeClientConnectQrTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/ServeClientHealthTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/ServeClientJournalConflictTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/ServeClientRecallParseTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/net",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/net/ServeClientV2Test.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ui/markdown/MarkdownEditHelpersTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/ui/markdown",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ui/markdown/MarkdownLiveStyleTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/ui/notes",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/ui/notes/KbNoteTreeTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/vm/CaptureTimelineHolderTest.kt",
+      "summary": ""
+    },
+    {
+      "area": "app/src/test/java/com/chronicle/app/vm",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "app/src/test/java/com/chronicle/app/vm/SettingsStateHolderTest.kt",
+      "summary": ""
+    },
+    {
+      "area": ".",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "build.gradle.kts",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/config.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/curation-op.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/enrich.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/entry.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/graph.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/health.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/insight.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/journal-amend.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/kb-move.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "contract",
+      "kind": "code",
+      "language": "json",
+      "path": "contract/tags.schema.json",
+      "summary": ""
+    },
+    {
+      "area": "gradle",
+      "kind": "code",
+      "language": "toml",
+      "path": "gradle/libs.versions.toml",
+      "summary": ""
+    },
+    {
+      "area": ".",
+      "kind": "code",
+      "language": "kotlin",
+      "path": "settings.gradle.kts",
+      "summary": ""
+    }
+  ],
+  "frameworks": [],
+  "freshness": {
+    "generation_id": 3,
+    "head_sha": "unavailable",
+    "pending_count": 0
+  },
+  "generated_head": "",
+  "graph_degraded": false,
+  "graph_degraded_reason": "",
+  "important_files": [
+    "README.md"
+  ],
+  "indexed_hash": "722e85d8040853993e9c5d4a2bac9b1b6f09ff37",
+  "languages": [
+    "json",
+    "kotlin",
+    "markdown",
+    "toml"
+  ],
+  "liveness_meta": {
+    "dead_symbol": {
+      "count": 2
+    },
+    "engine": "devmap-rust",
+    "entry_roots": {
+      "count": 0
+    }
+  },
+  "liveness_unreachable_unreliable": true,
+  "lsp": {},
+  "map_engine": "devmap-rust",
+  "package_managers": [],
+  "processes": [],
+  "subsystems": [
+    {
+      "area": "app/src/main/java/com/chronicle/app",
+      "critical_files": [
+        "app/src/main/java/com/chronicle/app/CaptureScreen.kt"
+      ],
+      "entry_points": [
+        "app/src/main/java/com/chronicle/app/CaptureScreen.kt",
+        "app/src/main/java/com/chronicle/app/FirstRunScreen.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/net",
+      "critical_files": [
+        "app/src/main/java/com/chronicle/app/net/CloudLlmClient.kt"
+      ],
+      "entry_points": [
+        "app/src/main/java/com/chronicle/app/net/CloudLlmClient.kt",
+        "app/src/main/java/com/chronicle/app/net/ServeClient.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    },
+    {
+      "area": "app",
+      "critical_files": [
+        "app/build.gradle.kts"
+      ],
+      "entry_points": [
+        "app/build.gradle.kts",
+        "app/src/main/java/com/chronicle/app/TagHelpers.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/e2ee",
+      "critical_files": [
+        "app/src/main/java/com/chronicle/app/e2ee/E2eeCrypto.kt"
+      ],
+      "entry_points": [
+        "app/src/main/java/com/chronicle/app/e2ee/E2eeCrypto.kt",
+        "app/src/main/java/com/chronicle/app/e2ee/E2eeManager.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/ui/markdown",
+      "critical_files": [
+        "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownEditHelpers.kt"
+      ],
+      "entry_points": [
+        "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownEditHelpers.kt",
+        "app/src/main/java/com/chronicle/app/ui/markdown/MarkdownToolbar.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    },
+    {
+      "area": "app/src/main/java/com/chronicle/app/health",
+      "critical_files": [
+        "app/src/main/java/com/chronicle/app/health/HealthModels.kt"
+      ],
+      "entry_points": [
+        "app/src/main/java/com/chronicle/app/health/HealthModels.kt",
+        "app/src/test/java/com/chronicle/app/health/HealthModelsTest.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    },
+    {
+      "area": "app/src/androidTest/java/com/chronicle/app",
+      "critical_files": [
+        "app/src/androidTest/java/com/chronicle/app/ExampleInstrumentedTest.kt"
+      ],
+      "entry_points": [
+        "app/src/androidTest/java/com/chronicle/app/ExampleInstrumentedTest.kt"
+      ],
+      "handoff_paths": [],
+      "neighbors": [],
+      "role_files": {},
+      "summary": ""
+    }
+  ],
+  "test_commands": [],
+  "unreachable_files": [],
+  "unwired_candidates": []
+}

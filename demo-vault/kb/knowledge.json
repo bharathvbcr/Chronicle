@@ -1,0 +1,107 @@
+{
+  "personal_details": {
+    "name": "Sam Rivera",
+    "description": "Sam is a demo persona for the Chronicle fixture vault. They build small local-first tools and keep a daily journal. Nothing here describes a real person.",
+    "location": "Portland, Oregon",
+    "email": "sam@example.com",
+    "linkedin": "https://example.com/in/sam-rivera",
+    "github": "https://example.com/sam-rivera",
+    "hobbies": [
+      "running",
+      "playing go",
+      "baking bread",
+      "birdwatching"
+    ],
+    "fun_facts": [
+      "Keeps a paper notebook as a backup for this vault.",
+      "Has never finished a crossword without help."
+    ]
+  },
+  "technical_skills": {
+    "programming_languages": [
+      "Rust",
+      "Python",
+      "TypeScript"
+    ],
+    "frameworks_and_tools": [
+      "SQLite",
+      "Tauri",
+      "Ollama"
+    ],
+    "biomedical_expertise": []
+  },
+  "projects": [
+    {
+      "title": "Harbor",
+      "tagline": "Local-first note capture",
+      "description": "A small capture tool that writes plain Markdown to a synced folder. Used here as the running example project.",
+      "stack": [
+        "Rust",
+        "SQLite"
+      ],
+      "status": "active"
+    },
+    {
+      "title": "Lantern",
+      "tagline": "Offline semantic search",
+      "description": "Embeds a folder of notes and answers questions without leaving the machine.",
+      "stack": [
+        "Python",
+        "SQLite"
+      ],
+      "status": "active"
+    },
+    {
+      "title": "Trailhead",
+      "tagline": "Weekly planning surface",
+      "description": "Turns a week of captures into a short plan and a list of open loops.",
+      "stack": [
+        "TypeScript"
+      ],
+      "status": "waiting"
+    }
+  ],
+  "publications": [],
+  "experience": [
+    {
+      "role": "Software Engineer",
+      "org": "Northwind Labs",
+      "period": "2024 - Present",
+      "details": [
+        "Maintains the Harbor capture tool.",
+        "Writes the weekly Trailhead digest."
+      ]
+    },
+    {
+      "role": "Junior Developer",
+      "org": "Meadowbrook Co-op",
+      "period": "2022 - 2024",
+      "details": [
+        "Built internal reporting scripts."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "degree": "B.S. Computer Science",
+      "org": "Example State University",
+      "date": "2022",
+      "context": "Coursework in databases and information retrieval."
+    }
+  ],
+  "certifications": [],
+  "behavioral_stories": {
+    "greatest_challenge": "Migrating the vault layout without losing links; solved with a dry-run migrator.",
+    "teamwork": "Paired with a teammate to define the folder contract before writing any code."
+  },
+  "custom_responses": [
+    {
+      "query_type": "relocation/location",
+      "answer": "Sam is a fictional demo persona; location is illustrative only."
+    },
+    {
+      "query_type": "contact",
+      "answer": "This is fixture data. Use sam@example.com only as a placeholder."
+    }
+  ]
+}

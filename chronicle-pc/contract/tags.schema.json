@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/tags.schema.json",
+  "title": "Chronicle Tags Taxonomy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "generated", "tags"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "generated": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["canonical", "aliases", "count"],
+        "properties": {
+          "canonical": {
+            "type": "string",
+            "minLength": 1
+          },
+          "aliases": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "parent": {
+            "type": ["string", "null"],
+            "description": "Canonical parent for hierarchy, e.g. work for work/chronicle"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "host": "127.0.0.1",
+  "port": 8801,
+  "bind_host": "127.0.0.1",
+  "lan_ip": null,
+  "base": "http://127.0.0.1:8801",
+  "kb_proxied": false,
+  "v": 1,
+  "auth_required": false
+}

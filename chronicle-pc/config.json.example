@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "layout_version": 2,
+  "timezone": "Asia/Kolkata",
+  "models": {
+    "llm": "maxwell1500/ornith-35b:Q4_K_M",
+    "embed": "nomic-embed-text",
+    "vision": "llama3.2-vision:11b"
+  },
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "num_ctx": 32768,
+    "temperature": null
+  },
+  "llm": {
+    "provider": "ollama",
+    "cloud_consent": false,
+    "vision_cloud_consent": false,
+    "grok": {
+      "base_url": "https://api.x.ai/v1",
+      "model": null
+    },
+    "vertex": {
+      "project": null,
+      "location": "us-central1",
+      "model": null
+    }
+  }
+}

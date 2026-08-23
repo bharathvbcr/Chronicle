@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "generated": "2026-07-10T16:39:19+00:00",
+  "month": "2026-07",
+  "entries": {
+    "2026-07-07_083012-pc": {
+      "auto_tags": [
+        "work",
+        "harbor"
+      ],
+      "summary_line": "Wrote down the folder contract for Harbor. Sync ignore list confirmed for index/.",
+      "entities": []
+    },
+    "2026-07-07_214500-pc": {
+      "auto_tags": [
+        "idea",
+        "lantern"
+      ],
+      "summary_line": "Lantern should show project notes beside journal topics. Import knowledge.json as a second source.",
+      "entities": []
+    },
+    "2026-07-08_063320-an": {
+      "auto_tags": [
+        "dream",
+        "symbols"
+      ],
+      "summary_line": "Dreamt of a library where every book was a graph node. A fox pointed at a shelf labelled Harbor.",
+      "entities": []
+    },
+    "2026-07-08_130015-an": {
+      "auto_tags": [
+        "health",
+        "trailhead",
+        "idea"
+      ],
+      "summary_line": "Lunch walk. Sketched the Trailhead week view on paper. Feeling steady.",
+      "entities": []
+    },
+    "2026-07-08_220840-pc": {
+      "auto_tags": [
+        "habits",
+        "work"
+      ],
+      "summary_line": "Evenings are better when I close the laptop by 10. Want to protect deep work mornings.",
+      "entities": []
+    },
+    "2026-07-09_091500-an": {
+      "auto_tags": [
+        "health",
+        "habits"
+      ],
+      "summary_line": "Morning run before standup. Cold, clear, good pace.",
+      "entities": []
+    },
+    "2026-07-09_154422-pc": {
+      "auto_tags": [
+        "work",
+        "lantern"
+      ],
+      "summary_line": "Lantern retrieval returns the right note but ranks it third. Needs a recency term.",
+      "entities": []
+    },
+    "2026-07-09_201010-an": {
+      "auto_tags": [
+        "knowledge",
+        "habits"
+      ],
+      "summary_line": "Baked bread. Read about chunking strategies for retrieval.",
+      "entities": []
+    }
+  }
+}

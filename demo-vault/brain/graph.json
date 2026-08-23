@@ -1,0 +1,333 @@
+{
+  "version": 1,
+  "generated": "2026-07-10T16:39:19+00:00",
+  "nodes": [
+    {
+      "id": "concept:role-0",
+      "kind": "concept",
+      "label": "Software Engineer — Northwind Labs",
+      "group": "core",
+      "weight": 1.0,
+      "annotation": "Northwind Labs · 2024 – Present\n\nRole scope (demo fixture):\n• Maintains the Harbor capture tool.\n• Writes the weekly Trailhead digest."
+    },
+    {
+      "id": "concept:role-1",
+      "kind": "concept",
+      "label": "Junior Developer — Meadowbrook Co-op",
+      "group": "core",
+      "weight": 1.0,
+      "annotation": "Meadowbrook Co-op · 2022 – 2024\n\nBuilt internal reporting scripts."
+    },
+    {
+      "id": "concept:skills-rust",
+      "kind": "concept",
+      "label": "Rust",
+      "group": "tools",
+      "weight": 1.0,
+      "annotation": "Used for the Harbor server and indexer."
+    },
+    {
+      "id": "concept:skills-python",
+      "kind": "concept",
+      "label": "Python",
+      "group": "search",
+      "weight": 1.0,
+      "annotation": "Used for the Lantern embedding pipeline."
+    },
+    {
+      "id": "concept:skills-ts",
+      "kind": "concept",
+      "label": "TypeScript",
+      "group": "tools",
+      "weight": 1.0,
+      "annotation": "Used for the Trailhead week view."
+    },
+    {
+      "id": "concept:habit-mornings",
+      "kind": "concept",
+      "label": "Protect deep-work mornings",
+      "group": "habits",
+      "weight": 1.0,
+      "annotation": "Recurring intention across July entries."
+    },
+    {
+      "id": "concept:habit-run",
+      "kind": "concept",
+      "label": "Morning run",
+      "group": "habits",
+      "weight": 1.0,
+      "annotation": "Appears in the 2026-07-09 entries."
+    },
+    {
+      "id": "project:harbor",
+      "kind": "project",
+      "label": "Harbor",
+      "group": "tools",
+      "weight": 1.0,
+      "annotation": "Local-first note capture. Plain Markdown in a synced folder.",
+      "doc": "30-Knowledge/Harbor.md"
+    },
+    {
+      "id": "project:lantern",
+      "kind": "project",
+      "label": "Lantern",
+      "group": "search",
+      "weight": 1.0,
+      "annotation": "Offline semantic search over the vault.",
+      "doc": "30-Knowledge/Lantern.md"
+    },
+    {
+      "id": "project:trailhead",
+      "kind": "project",
+      "label": "Trailhead",
+      "group": "tools",
+      "weight": 1.0,
+      "annotation": "Weekly planning surface built from captures.",
+      "doc": "30-Knowledge/Trailhead.md"
+    },
+    {
+      "id": "topic:retrieval",
+      "kind": "topic",
+      "label": "Retrieval",
+      "group": "search",
+      "weight": 1.0,
+      "annotation": "Chunking, ranking, recency."
+    },
+    {
+      "id": "topic:local-first",
+      "kind": "topic",
+      "label": "Local-first",
+      "group": "tools",
+      "weight": 1.0,
+      "annotation": "No accounts, no telemetry, files on disk."
+    },
+    {
+      "id": "topic:journaling",
+      "kind": "topic",
+      "label": "Journaling",
+      "group": "habits",
+      "weight": 1.0,
+      "annotation": "Daily capture and weekly review."
+    },
+    {
+      "id": "entry:2026-07-07_083012-pc",
+      "kind": "entry",
+      "label": "Wrote down the folder contract for Harbor. Sync ignore list ",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-07_083012-pc",
+      "ts": "2026-07-07T08:30:12+05:30"
+    },
+    {
+      "id": "entry:2026-07-07_214500-pc",
+      "kind": "entry",
+      "label": "Lantern should show project notes beside journal topics. Imp",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-07_214500-pc",
+      "ts": "2026-07-07T21:45:00+05:30"
+    },
+    {
+      "id": "entry:2026-07-08_063320-an",
+      "kind": "entry",
+      "label": "Dreamt of a library where every book was a graph node. A fox",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-08_063320-an",
+      "ts": "2026-07-08T06:33:20+05:30"
+    },
+    {
+      "id": "entry:2026-07-08_130015-an",
+      "kind": "entry",
+      "label": "Lunch walk. Sketched the Trailhead week view on paper. Feeli",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-08_130015-an",
+      "ts": "2026-07-08T13:00:15+05:30"
+    },
+    {
+      "id": "entry:2026-07-08_220840-pc",
+      "kind": "entry",
+      "label": "Evenings are better when I close the laptop by 10. Want to p",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-08_220840-pc",
+      "ts": "2026-07-08T22:08:40+05:30"
+    },
+    {
+      "id": "entry:2026-07-09_091500-an",
+      "kind": "entry",
+      "label": "Morning run before standup. Cold, clear, good pace.",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-09_091500-an",
+      "ts": "2026-07-09T09:15:00+05:30"
+    },
+    {
+      "id": "entry:2026-07-09_154422-pc",
+      "kind": "entry",
+      "label": "Lantern retrieval returns the right note but ranks it third.",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-09_154422-pc",
+      "ts": "2026-07-09T15:44:22+05:30"
+    },
+    {
+      "id": "entry:2026-07-09_201010-an",
+      "kind": "entry",
+      "label": "Baked bread. Read about chunking strategies for retrieval.",
+      "group": "habits",
+      "weight": 1.0,
+      "entry_id": "2026-07-09_201010-an",
+      "ts": "2026-07-09T20:10:10+05:30"
+    },
+    {
+      "id": "person:sam",
+      "kind": "person",
+      "label": "Sam Rivera",
+      "group": "core",
+      "weight": 1.0,
+      "annotation": "Demo persona for this fixture vault."
+    }
+  ],
+  "edges": [
+    {
+      "from": "person:sam",
+      "to": "concept:role-0",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "concept:role-0",
+      "to": "project:harbor",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "concept:role-0",
+      "to": "project:trailhead",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "concept:role-1",
+      "to": "concept:skills-python",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "project:harbor",
+      "to": "concept:skills-rust",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "project:lantern",
+      "to": "concept:skills-python",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "project:trailhead",
+      "to": "concept:skills-ts",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "project:lantern",
+      "to": "topic:retrieval",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "project:harbor",
+      "to": "topic:local-first",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "topic:journaling",
+      "to": "concept:habit-mornings",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "topic:journaling",
+      "to": "concept:habit-run",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "person:sam",
+      "to": "topic:journaling",
+      "rel": "manual",
+      "score": 1.0
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-07_083012-pc",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-07_214500-pc",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-08_063320-an",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-08_130015-an",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-08_220840-pc",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-09_091500-an",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-09_154422-pc",
+      "rel": "derived",
+      "score": 0.5
+    },
+    {
+      "from": "topic:journaling",
+      "to": "entry:2026-07-09_201010-an",
+      "rel": "derived",
+      "score": 0.5
+    }
+  ],
+  "groups": {
+    "core": {
+      "label": "Identity & Practice",
+      "color": "#C41E3A"
+    },
+    "tools": {
+      "label": "Tools & Local-First",
+      "color": "#2A7A56"
+    },
+    "search": {
+      "label": "Search & Retrieval",
+      "color": "#5C4F8A"
+    },
+    "habits": {
+      "label": "Habits & Routines",
+      "color": "#B7791F"
+    }
+  }
+}

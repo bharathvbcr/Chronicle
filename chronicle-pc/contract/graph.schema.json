@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/graph.schema.json",
+  "title": "Chronicle Graph v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "generated", "nodes", "edges"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "generated": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO-8601 freshness timestamp"
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "kind", "label"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": {
+            "type": "string",
+            "enum": ["topic", "entry", "person", "place", "project", "concept"]
+          },
+          "label": { "type": "string" },
+          "weight": { "type": "number" },
+          "pinned": { "type": "boolean" },
+          "hidden": { "type": "boolean" },
+          "annotation": { "type": "string" },
+          "doc": {
+            "type": "string",
+            "description": "Vault-relative knowledge note path (PARA preferred; legacy kb/notes/ still valid)"
+          },
+          "entry_id": { "type": "string" },
+          "ts": { "type": "string" }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["from", "to", "rel"],
+        "properties": {
+          "from": { "type": "string", "minLength": 1 },
+          "to": { "type": "string", "minLength": 1 },
+          "rel": {
+            "type": "string",
+            "enum": ["about", "related", "continues", "mentions", "manual"]
+          },
+          "score": { "type": "number" }
+        }
+      }
+    }
+  }
+}

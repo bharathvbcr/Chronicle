@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chronicle</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main class="boot">
+      <canvas id="boot-canvas" width="120" height="120" aria-hidden="true"></canvas>
+      <p class="brand">Chronicle</p>
+      <p id="status" class="status">Starting local server…</p>
+      <p id="detail" class="detail"></p>
+      <button id="retry" class="hidden">Try again</button>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/kb-move.schema.json",
+  "title": "KbMove",
+  "description": "Request/response for POST /kb/move and POST /kb/archive. Dual-copy policy: prefer PARA destination; leftover legacy same-suffix copies are quarantined under 90-Archive/_legacy-kb/.",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "KbMoveRequest",
+      "type": "object",
+      "required": ["from_path", "to_path"],
+      "additionalProperties": false,
+      "properties": {
+        "from_path": {
+          "type": "string",
+          "description": "Source vault-relative knowledge path (PARA or legacy kb/notes)"
+        },
+        "to_path": {
+          "type": "string",
+          "description": "Destination vault-relative knowledge .md path (must be PARA)"
+        }
+      }
+    },
+    {
+      "title": "KbArchiveRequest",
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Note to archive under 90-Archive/<original subpath>/"
+        }
+      }
+    },
+    {
+      "title": "KbMoveResponse",
+      "type": "object",
+      "required": ["ok", "from_path", "to_path"],
+      "additionalProperties": false,
+      "properties": {
+        "ok": { "type": "boolean" },
+        "from_path": { "type": "string" },
+        "to_path": { "type": "string" },
+        "quarantined": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Legacy sibling copies moved under 90-Archive/_legacy-kb/"
+        }
+      }
+    }
+  ]
+}

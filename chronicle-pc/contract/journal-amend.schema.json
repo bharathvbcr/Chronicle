@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/journal-amend.schema.json",
+  "title": "Chronicle Journal Amend v1",
+  "description": "Request/response for serve PATCH /journal/entries/{id}. The amend gate requires the on-disk fence body hash to equal both filed_content_hash and the client-supplied base_hash; mismatch returns HTTP 409 with {detail, on_disk_hash, filed_content_hash}.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "base_hash"],
+      "properties": {
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "New fence body (raw markdown between the entry fences, without the fence comment lines)"
+        },
+        "base_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the fence body the client based its edit on; must match on-disk hash and filed_content_hash"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "hash", "prose_edited"],
+      "properties": {
+        "id": { "type": "string", "description": "Entry id" },
+        "path": { "type": "string", "description": "Vault-relative journal path, e.g. 40-Journal/YYYY-MM-DD.md" },
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the new fence body; also written to the entry's filed_content_hash"
+        },
+        "prose_edited": { "type": "boolean", "const": true }
+      }
+    }
+  }
+}

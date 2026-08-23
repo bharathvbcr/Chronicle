@@ -1,0 +1,27 @@
+name: Contract sync
+
+on:
+  push:
+    paths:
+      - "chronicle-pc/CONTRACT.md"
+      - "chronicle-pc/contract/**"
+      - "chronicle-android/CONTRACT.md"
+      - "chronicle-android/contract/**"
+      - "scripts/check-contract-sync.sh"
+      - ".github/workflows/contract-sync.yml"
+  pull_request:
+    paths:
+      - "chronicle-pc/CONTRACT.md"
+      - "chronicle-pc/contract/**"
+      - "chronicle-android/CONTRACT.md"
+      - "chronicle-android/contract/**"
+      - "scripts/check-contract-sync.sh"
+      - ".github/workflows/contract-sync.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Byte-identical CONTRACT + schemas
+        run: bash scripts/check-contract-sync.sh

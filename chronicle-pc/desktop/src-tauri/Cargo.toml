@@ -1,0 +1,22 @@
+[package]
+name = "chronicle"
+version = "0.1.0"
+description = "Chronicle desktop shell — Tauri wrapper around chronicle serve + SPA"
+authors = ["Chronicle"]
+edition = "2021"
+
+[lib]
+name = "chronicle_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+chronicle-server = { path = "../../server" }
+tokio = { version = "1", features = ["sync", "time", "macros", "rt-multi-thread"] }
+tauri = { version = "2", features = ["tray-icon"] }
+axum = "0.8"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

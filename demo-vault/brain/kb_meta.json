@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "source": "kb/knowledge.json",
+  "groups": {
+    "core": {
+      "label": "Identity & Practice",
+      "color": "#C41E3A"
+    },
+    "tools": {
+      "label": "Tools & Local-First",
+      "color": "#2A7A56"
+    },
+    "search": {
+      "label": "Search & Retrieval",
+      "color": "#5C4F8A"
+    },
+    "habits": {
+      "label": "Habits & Routines",
+      "color": "#B7791F"
+    }
+  }
+}

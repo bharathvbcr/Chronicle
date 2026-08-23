@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/curation-op.schema.json",
+  "title": "Chronicle Curation Op v1",
+  "description": "One JSON object per line in curation/ops/<device>.jsonl",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["op", "ts", "device"],
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": [
+        "pin",
+        "unpin",
+        "hide",
+        "unhide",
+        "rename",
+        "merge",
+        "link",
+        "unlink",
+        "annotate",
+        "create_concept",
+        "set_doc",
+        "delete_concept"
+      ]
+    },
+    "ts": {
+      "type": "string",
+      "minLength": 1
+    },
+    "device": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Device code, e.g. phone, pc, an"
+    },
+    "node": { "type": "string" },
+    "label": { "type": "string" },
+    "from": { "type": "string" },
+    "into": { "type": "string" },
+    "to": { "type": "string" },
+    "rel": {
+      "type": "string",
+      "enum": ["about", "related", "continues", "mentions", "manual"]
+    },
+    "text": { "type": "string" },
+    "id": { "type": "string" },
+    "doc": {
+      "type": "string",
+      "description": "Vault-relative knowledge note path (PARA preferred, e.g. 10-Work/...; legacy kb/notes/ still valid)"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "op": { "enum": ["pin", "unpin", "hide", "unhide", "delete_concept"] } }
+      },
+      "then": { "required": ["node"] }
+    },
+    {
+      "if": {
+        "properties": { "op": { "const": "rename" } }
+      },
+      "then": { "required": ["node", "label"] }
+    },
+    {
+      "if": {
+        "properties": { "op": { "const": "merge" } }
+      },
+      "then": { "required": ["from", "into"] }
+    },
+    {
+      "if": {
+        "properties": { "op": { "enum": ["link", "unlink"] } }
+      },
+      "then": { "required": ["from", "to"] }
+    },
+    {
+      "if": {
+        "properties": { "op": { "const": "annotate" } }
+      },
+      "then": { "required": ["node", "text"] }
+    },
+    {
+      "if": {
+        "properties": { "op": { "const": "create_concept" } }
+      },
+      "then": { "required": ["id", "label"] }
+    },
+    {
+      "if": {
+        "properties": { "op": { "const": "set_doc" } }
+      },
+      "then": { "required": ["node", "doc"] }
+    }
+  ]
+}

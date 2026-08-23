@@ -1,0 +1,3143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chronicle</title>
+  <script>
+    // Apply theme before paint to avoid flash (matches Android Color.kt tokens).
+    (() => {
+      const KEY = "chronicle-theme";
+      const saved = localStorage.getItem(KEY) || "dark";
+      const dark = saved === "dark" || (saved === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      document.documentElement.dataset.themePref = saved;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root, [data-theme="light"] {
+      color-scheme: light;
+      --bg: #F6E8EB;
+      --bg-wash-top: #F0D4DA;
+      --bg-wash-bottom: #EAD0D6;
+      --surface: rgba(255, 248, 249, 0.62);
+      --ink: #2A0E12;
+      --muted: #8A5560;
+      --line: rgba(140, 40, 55, 0.18);
+      --accent: #B91C3A;
+      --accent-soft: rgba(185, 28, 58, 0.12);
+      --accent-glow: rgba(185, 28, 58, 0.18);
+      --idea: #C45C12;
+      --dream: #8B2E4A;
+      --reflection: #2F7A4E;
+      --log: #8A6A6E;
+      --danger: #7A0010;
+      --chrome: rgba(255, 245, 247, 0.55);
+      --chrome-solid: rgba(255, 242, 244, 0.78);
+      --hover: rgba(185, 28, 58, 0.08);
+      --shadow: rgba(80, 10, 20, 0.1);
+      --overlay: rgba(40, 8, 14, 0.4);
+      --modal-shadow: rgba(60, 8, 16, 0.28);
+      --glass-shine: rgba(255, 255, 255, 0.7);
+      --glass-edge: rgba(255, 255, 255, 0.8);
+      --glass-inset: rgba(255, 255, 255, 0.45);
+      --mm-label: #3A1820;
+      --mm-label-stroke: rgba(255, 248, 250, 0.85);
+      --mm-edge: rgba(122, 74, 82, 0.42);
+      --mm-edge-strong: rgba(185, 28, 58, 0.62);
+      --mm-edge-glow: rgba(196, 30, 58, 0.22);
+      --panel-w: 280px;
+      --right-w: 300px;
+      --radius: 14px;
+      --blur: 22px;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0A0406;
+      --bg-wash-top: #1C060A;
+      --bg-wash-bottom: #080203;
+      --surface: rgba(72, 18, 26, 0.42);
+      --ink: #F3E4E7;
+      --muted: #B08A90;
+      --line: rgba(255, 120, 140, 0.16);
+      --accent: #E11D48;
+      --accent-soft: rgba(225, 29, 72, 0.22);
+      --accent-glow: rgba(190, 20, 50, 0.35);
+      --idea: #F0A04B;
+      --dream: #E879A8;
+      --reflection: #4ADE80;
+      --log: #A8989A;
+      --danger: #FB7185;
+      --chrome: rgba(18, 6, 10, 0.48);
+      --chrome-solid: rgba(22, 8, 12, 0.72);
+      --hover: rgba(255, 80, 100, 0.08);
+      --shadow: rgba(0, 0, 0, 0.45);
+      --overlay: rgba(0, 0, 0, 0.62);
+      --modal-shadow: rgba(80, 0, 16, 0.55);
+      --glass-shine: rgba(255, 180, 190, 0.12);
+      --glass-edge: rgba(255, 200, 210, 0.22);
+      --glass-inset: rgba(255, 255, 255, 0.06);
+      --mm-label: #F3E4E7;
+      --mm-label-stroke: rgba(0, 0, 0, 0.65);
+      --mm-edge: rgba(180, 90, 105, 0.45);
+      --mm-edge-strong: rgba(225, 29, 72, 0.7);
+      --mm-edge-glow: rgba(196, 30, 58, 0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "Source Sans 3", system-ui, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 55% at 12% -10%, var(--accent-glow), transparent 55%),
+        radial-gradient(ellipse 60% 45% at 88% 8%, rgba(120, 10, 40, 0.22), transparent 50%),
+        radial-gradient(ellipse 50% 40% at 50% 100%, rgba(90, 8, 28, 0.2), transparent 55%),
+        linear-gradient(165deg, var(--bg-wash-top) 0%, var(--bg) 42%, var(--bg-wash-bottom) 100%);
+      color: var(--ink);
+      overflow: hidden;
+    }
+    [data-theme="dark"] body {
+      background:
+        radial-gradient(ellipse 80% 55% at 12% -10%, rgba(190, 25, 55, 0.45), transparent 55%),
+        radial-gradient(ellipse 60% 45% at 88% 8%, rgba(120, 10, 40, 0.35), transparent 50%),
+        radial-gradient(ellipse 50% 40% at 50% 100%, rgba(90, 8, 28, 0.4), transparent 55%),
+        linear-gradient(165deg, var(--bg-wash-top) 0%, var(--bg) 42%, var(--bg-wash-bottom) 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(circle at 30% 40%, var(--accent-glow), transparent 28%),
+        radial-gradient(circle at 70% 65%, rgba(140, 20, 50, 0.12), transparent 32%);
+      filter: blur(40px);
+      animation: liquid-drift 18s ease-in-out infinite alternate;
+    }
+    @keyframes liquid-drift {
+      from { transform: translate3d(-2%, -1%, 0) scale(1); opacity: 0.85; }
+      to { transform: translate3d(3%, 2%, 0) scale(1.08); opacity: 1; }
+    }
+    h1, h2, h3, .serif { font-family: Lora, Georgia, serif; }
+    button, input, textarea, select {
+      font: inherit; color: inherit;
+    }
+    #app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+    .glass {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow:
+        inset 0 1px 0 var(--glass-inset),
+        0 8px 28px var(--shadow);
+      backdrop-filter: blur(var(--blur)) saturate(160%);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(160%);
+    }
+    header.appbar {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--line);
+      background: var(--chrome);
+      backdrop-filter: blur(var(--blur)) saturate(170%);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(170%);
+      box-shadow: inset 0 -1px 0 var(--glass-shine);
+      z-index: 5;
+    }
+    header .brand {
+      font-family: Lora, serif; font-size: 1.35rem; font-weight: 600;
+      letter-spacing: -0.02em; color: var(--ink);
+    }
+    header .brand span { color: var(--accent); }
+    .tabs { display: flex; gap: 0.25rem; margin-left: 1rem; }
+    .tabs button {
+      background: transparent; border: 0; padding: 0.4rem 0.75rem;
+      border-radius: 10px; color: var(--muted); cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .tabs button.active {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 0 0 1px var(--line), 0 4px 16px var(--shadow);
+      backdrop-filter: blur(12px) saturate(150%);
+      -webkit-backdrop-filter: blur(12px) saturate(150%);
+    }
+    .spacer { flex: 1; }
+    .btn {
+      border: 1px solid var(--line); background: var(--surface);
+      padding: 0.4rem 0.8rem; border-radius: 10px; cursor: pointer;
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+      backdrop-filter: blur(14px) saturate(150%);
+      -webkit-backdrop-filter: blur(14px) saturate(150%);
+      transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    .btn:hover { box-shadow: inset 0 1px 0 var(--glass-edge), 0 6px 18px var(--shadow); }
+    .btn.primary {
+      background: linear-gradient(165deg, #F43F5E 0%, var(--accent) 55%, #9F1239 100%);
+      color: #fff; border-color: rgba(255, 120, 140, 0.35);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), 0 8px 22px rgba(190, 20, 50, 0.35);
+    }
+    .btn.primary:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 10px 28px rgba(190, 20, 50, 0.45); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-theme { min-width: 2.4rem; padding: 0.4rem 0.55rem; }
+    .app-settings-wrap { position: relative; }
+    .app-settings {
+      position: absolute; top: calc(100% + 0.4rem); right: 0; z-index: 40;
+      width: min(320px, calc(100vw - 1.5rem));
+      padding: 0.75rem 0.85rem; border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 10px 28px var(--shadow);
+      backdrop-filter: blur(16px) saturate(160%);
+      -webkit-backdrop-filter: blur(16px) saturate(160%);
+      font-size: 0.8rem; color: var(--ink);
+      display: flex; flex-direction: column; gap: 0.55rem;
+      max-height: min(70vh, 28rem); overflow: auto;
+    }
+    .app-settings.hidden { display: none; }
+    .app-settings h4 { margin: 0; font-size: 0.85rem; }
+    .app-settings label {
+      display: grid; grid-template-columns: 1fr; gap: 0.25rem;
+      color: var(--muted); font-size: 0.75rem;
+    }
+    .app-settings select,
+    .app-settings input[type="text"],
+    .app-settings input[type="number"] {
+      width: 100%;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 0.35rem 0.45rem; color: var(--ink);
+    }
+    .app-settings .app-settings-status {
+      font-size: 0.72rem; color: var(--muted); min-height: 1.1em;
+    }
+    .app-settings .app-settings-status.warn { color: var(--idea); }
+    .app-settings .app-settings-status.err { color: var(--danger); }
+    .app-settings .app-settings-status.ok { color: var(--reflection); }
+    .app-settings .mm-settings-actions { display: flex; gap: 0.4rem; margin-top: 0.15rem; }
+    .status { font-size: 0.8rem; color: var(--muted); max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    main.layout {
+      flex: 1; display: grid;
+      grid-template-columns: var(--panel-w) 1fr var(--right-w);
+      min-height: 0;
+    }
+    aside, section.pane {
+      min-height: 0; overflow: auto;
+      border-right: 1px solid var(--line);
+      background: rgba(0, 0, 0, 0.08);
+    }
+    [data-theme="light"] aside,
+    [data-theme="light"] section.pane { background: rgba(255, 255, 255, 0.12); }
+    aside.right { border-right: 0; border-left: 1px solid var(--line); }
+    .panel-head {
+      position: sticky; top: 0; padding: 0.85rem 1rem 0.5rem;
+      background: var(--chrome-solid); z-index: 2;
+      font-family: Lora, serif; font-size: 0.95rem;
+      backdrop-filter: blur(16px) saturate(150%);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      border-bottom: 1px solid transparent;
+      box-shadow: inset 0 -1px 0 var(--glass-shine);
+    }
+    .tag-list { list-style: none; margin: 0; padding: 0 0.5rem 1rem; }
+    .tag-list li {
+      padding: 0.35rem 0.6rem; border-radius: 10px; cursor: pointer;
+      display: flex; justify-content: space-between; color: var(--muted); font-size: 0.9rem;
+      border: 1px solid transparent;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .tag-list li:hover, .tag-list li.active {
+      background: var(--surface); color: var(--ink);
+      border-color: var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+    }
+    .entry-list { list-style: none; margin: 0; padding: 0 0.75rem 2rem; }
+    .entry-list li {
+      padding: 0.75rem 0.85rem; margin-bottom: 0.35rem; border-radius: var(--radius);
+      cursor: pointer; border: 1px solid transparent;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+    }
+    .entry-list li:hover { background: var(--hover); }
+    .entry-list li.selected {
+      background: var(--surface);
+      border-color: var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 6px 20px var(--shadow);
+      backdrop-filter: blur(14px) saturate(150%);
+      -webkit-backdrop-filter: blur(14px) saturate(150%);
+    }
+    .entry-meta { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.5rem; align-items: center; }
+    .type-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .type-log { background: var(--log); }
+    .type-idea { background: var(--idea); }
+    .type-dream { background: var(--dream); }
+    .type-reflection { background: var(--reflection); }
+    .entry-preview { margin-top: 0.25rem; font-size: 0.95rem; line-height: 1.4; }
+    .locked { opacity: 0.55; }
+
+    .detail { padding: 1.25rem 1.5rem 3rem; }
+    .detail h2 { margin: 0 0 0.5rem; font-size: 1.35rem; }
+    .detail .body { white-space: pre-wrap; line-height: 1.55; margin-top: 1rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+    .chip {
+      font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+      background: var(--accent-soft); color: var(--accent);
+      border: 1px solid var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+    }
+
+    #mindmap-wrap { position: relative; height: 100%; }
+    #mindmap { width: 100%; height: 100%; display: block; background: transparent; cursor: grab; }
+    #mindmap:active { cursor: grabbing; }
+    .mm-toolbar {
+      position: absolute; top: 0.75rem; left: 0.75rem; right: 0.75rem;
+      display: flex; flex-wrap: wrap; gap: 0.4rem; z-index: 3;
+      align-items: center;
+    }
+    .mm-toolbar input, .mm-toolbar select {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 10px; padding: 0.35rem 0.5rem; font-size: 0.85rem;
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+      backdrop-filter: blur(14px) saturate(150%);
+      -webkit-backdrop-filter: blur(14px) saturate(150%);
+    }
+    .mm-hint { position: absolute; bottom: 0.75rem; left: 0.75rem; font-size: 0.75rem; color: var(--muted); z-index: 2; pointer-events: none; }
+    .mm-legend {
+      position: absolute; bottom: 2.4rem; left: 0.75rem; z-index: 2;
+      padding: 0.45rem 0.65rem; border-radius: 10px;
+      background: var(--surface); border: 1px solid var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 6px 18px var(--shadow);
+      backdrop-filter: blur(14px) saturate(150%);
+      -webkit-backdrop-filter: blur(14px) saturate(150%);
+      font-size: 0.72rem; color: var(--muted);
+      display: flex; flex-direction: column; gap: 0.3rem;
+    }
+    .mm-legend.hidden { display: none; }
+    .mm-legend-row { display: flex; flex-wrap: wrap; gap: 0.45rem 0.7rem; align-items: center; }
+    .mm-legend-item { display: inline-flex; align-items: center; gap: 0.28rem; color: var(--ink); }
+    .mm-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+    }
+    .mm-counts { font-variant-numeric: tabular-nums; opacity: 0.85; }
+    .mm-settings {
+      position: absolute; top: 3.1rem; right: 0.75rem; z-index: 4;
+      width: min(280px, calc(100% - 1.5rem));
+      padding: 0.75rem 0.85rem; border-radius: 12px;
+      background: var(--surface); border: 1px solid var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 10px 28px var(--shadow);
+      backdrop-filter: blur(16px) saturate(160%);
+      -webkit-backdrop-filter: blur(16px) saturate(160%);
+      font-size: 0.8rem; color: var(--ink);
+      display: flex; flex-direction: column; gap: 0.55rem;
+      max-height: calc(100% - 4rem); overflow: auto;
+    }
+    .mm-settings.hidden { display: none; }
+    .mm-settings h4 { margin: 0; font-size: 0.85rem; }
+    .mm-settings label {
+      display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.5rem;
+      align-items: center; color: var(--muted); font-size: 0.75rem;
+    }
+    .mm-settings label.mm-check { grid-template-columns: auto 1fr; gap: 0.45rem; }
+    .mm-settings label span.val { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 2.4rem; text-align: right; }
+    .mm-settings input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+    .mm-settings select {
+      grid-column: 1 / -1; width: 100%;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 0.3rem 0.4rem; color: var(--ink);
+    }
+    .mm-settings .mm-settings-actions { display: flex; gap: 0.4rem; margin-top: 0.15rem; }
+    .mm-nbr {
+      list-style: none; padding: 0; margin: 0.35rem 0 0;
+      display: flex; flex-direction: column; gap: 0.25rem;
+    }
+    .mm-nbr li {
+      display: flex; align-items: center; gap: 0.45rem;
+      padding: 0.4rem 0.5rem; border-radius: 8px;
+      border: 1px solid transparent; cursor: pointer;
+      color: var(--ink); font-size: 0.85rem;
+    }
+    .mm-nbr li:hover {
+      background: var(--accent-soft); border-color: var(--line);
+    }
+    .mm-nbr .mm-nbr-rel {
+      margin-left: auto; font-size: 0.7rem; color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-transform: uppercase;
+    }
+
+    /* Brain view: compact assistant docked in right panel */
+    .brain-right {
+      display: flex; flex-direction: column; height: 100%; min-height: 0;
+    }
+    .brain-chat {
+      display: flex; flex-direction: column; min-height: 0;
+      border-bottom: 1px solid var(--line);
+      max-height: min(58%, 34rem);
+      background: color-mix(in srgb, var(--surface) 55%, transparent);
+    }
+    .brain-chat.collapsed { max-height: none; }
+    .brain-chat.collapsed .brain-chat-body { display: none; }
+    .brain-chat-head {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.6rem 0.75rem; flex-shrink: 0;
+    }
+    .brain-chat-head .serif {
+      font-size: 0.95rem; flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .brain-launchers {
+      display: flex; align-items: center; gap: 0.3rem; flex-shrink: 0;
+    }
+    .brain-tool-toggle {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.32rem 0.55rem; border-radius: 8px;
+      font-size: 0.75rem; color: var(--muted); white-space: nowrap;
+    }
+    .brain-tool-toggle::after {
+      content: "+"; width: 0.8em; color: var(--accent);
+      font-weight: 700; text-align: center;
+    }
+    .brain-tool-toggle[aria-expanded="true"] {
+      color: var(--ink); border-color: var(--accent); background: var(--accent-soft);
+    }
+    .brain-tool-toggle[aria-expanded="true"]::after { content: "−"; }
+    .brain-chat-body {
+      display: flex; flex-direction: column; gap: 0.4rem;
+      padding: 0 0.75rem 0.65rem; min-height: 0; flex: 1;
+    }
+    .brain-chat .recall-log {
+      flex: 1; min-height: 5rem; max-height: none; overflow: auto;
+      margin: 0;
+    }
+    .brain-scope {
+      display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center;
+    }
+    .brain-scope button {
+      font-size: 0.7rem; padding: 0.2rem 0.45rem;
+      border-radius: 8px; border: 1px solid var(--line);
+      background: var(--surface); color: var(--muted); cursor: pointer;
+    }
+    .brain-scope button.active {
+      color: var(--ink); border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .cite-chip {
+      display: inline-block; margin: 0.15rem 0.2rem 0 0;
+      padding: 0.15rem 0.45rem; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--surface);
+      font-size: 0.7rem; color: var(--ink); cursor: pointer;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .cite-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .brain-detail {
+      flex: 1; min-height: 0; overflow: auto;
+    }
+    .brain-ask {
+      display: flex; gap: 0.4rem; align-items: center; min-width: 0;
+    }
+    .brain-ask input { flex: 1; min-width: 0; }
+    .md-editor {
+      width: 100%; min-height: 12rem; resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem; line-height: 1.45;
+      padding: 0.5rem; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--bg); color: var(--ink);
+    }
+    .brain-resume {
+      display: flex; gap: 0.35rem; align-items: center;
+      padding: 0 0.75rem 0.65rem; min-width: 0;
+    }
+    .brain-resume input {
+      flex: 1; min-width: 0; padding: 0.4rem 0.5rem; font-size: 0.8rem;
+      border: 1px solid var(--line); border-radius: 8px;
+      background: var(--surface); color: var(--ink);
+    }
+    .brain-enrich {
+      display: flex; gap: 0.45rem; align-items: center; min-width: 0;
+    }
+    .brain-enrich .btn {
+      flex-shrink: 0; font-size: 0.72rem; padding: 0.25rem 0.55rem;
+      border-radius: 8px; color: var(--muted);
+    }
+    .brain-enrich-status {
+      flex: 1; min-width: 0; font-size: 0.72rem; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .brain-enrich-status.ok { color: var(--reflection); }
+    .brain-enrich-status.err { color: var(--danger); white-space: normal; }
+    .brain-enrich-status.busy::after {
+      content: "…"; display: inline-block; margin-left: 0.1em;
+      animation: enrich-ellipsis 1.2s steps(4, end) infinite;
+      overflow: hidden; vertical-align: bottom; width: 1.2em;
+    }
+    @keyframes enrich-ellipsis {
+      0% { width: 0; }
+      100% { width: 1.2em; }
+    }
+    .node-sheet { margin-top: 0.75rem; }
+    .node-primary-actions {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 0.4rem; align-items: stretch;
+    }
+    .node-primary-actions .btn { margin: 0; min-width: 0; }
+    .node-ask { text-align: left; }
+    .node-more-toggle {
+      grid-column: 1 / -1; width: 100%;
+      display: flex; align-items: center; justify-content: space-between;
+      color: var(--muted);
+    }
+    .node-more-toggle::after { content: "＋"; color: var(--accent); }
+    .node-more-toggle[aria-expanded="true"]::after { content: "−"; }
+    .node-more-actions {
+      margin-top: 0.45rem; padding: 0.5rem;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.4rem; border: 1px solid var(--line); border-radius: 10px;
+      background: color-mix(in srgb, var(--surface) 75%, transparent);
+    }
+    .node-more-actions .btn {
+      margin: 0; min-width: 0; width: 100%;
+      text-align: left; white-space: normal;
+    }
+    .node-more-actions .danger { color: var(--danger); }
+    @media (max-width: 1120px) {
+      .brain-chat-head { align-items: flex-start; }
+      .brain-chat-head .serif { padding-top: 0.3rem; }
+      .brain-launchers { flex-wrap: wrap; justify-content: flex-end; }
+      .node-primary-actions { grid-template-columns: 1fr 1fr; }
+      .node-ask, .node-more-toggle { grid-column: 1 / -1; }
+    }
+    @media (max-width: 760px) {
+      .brain-chat { max-height: min(62%, 32rem); }
+      .brain-chat-head { padding-inline: 0.6rem; }
+      .brain-chat-body, .brain-resume { padding-inline: 0.6rem; }
+      .node-more-actions { grid-template-columns: 1fr; }
+    }
+
+    .today-card {
+      margin: 0.75rem; padding: 1rem; background: var(--surface);
+      border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 8px 24px var(--shadow);
+      backdrop-filter: blur(var(--blur)) saturate(160%);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(160%);
+    }
+    .today-card h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+    .today-card p { margin: 0.25rem 0; font-size: 0.9rem; color: var(--muted); }
+
+    .connect-panel {
+      margin: 0.75rem; padding: 1rem; background: var(--surface);
+      border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: inset 0 1px 0 var(--glass-inset), 0 8px 24px var(--shadow);
+      backdrop-filter: blur(var(--blur)) saturate(160%);
+      -webkit-backdrop-filter: blur(var(--blur)) saturate(160%);
+    }
+    .connect-panel h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+    .connect-panel p { margin: 0.25rem 0; font-size: 0.8rem; color: var(--muted); line-height: 1.35; }
+    .connect-panel .connect-base {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem; word-break: break-all; color: var(--ink);
+      margin: 0.5rem 0;
+    }
+    .connect-panel .connect-qr {
+      display: block; width: 140px; height: 140px; margin: 0.5rem auto;
+      background: #fff; border-radius: 8px; border: 1px solid var(--line);
+    }
+    .connect-panel .connect-qr.hidden { display: none; }
+    .connect-panel #connect-hint.hidden { display: none; }
+    .connect-panel .connect-status { font-size: 0.75rem; margin-top: 0.35rem; }
+
+    .overlay {
+      position: fixed; inset: 0; background: var(--overlay);
+      display: none; align-items: flex-start; justify-content: center;
+      padding-top: 12vh; z-index: 50;
+      backdrop-filter: blur(8px) saturate(120%);
+      -webkit-backdrop-filter: blur(8px) saturate(120%);
+    }
+    .overlay.open { display: flex; }
+    .modal {
+      width: min(560px, 92vw); background: var(--chrome-solid);
+      border: 1px solid var(--glass-edge); border-radius: 18px;
+      box-shadow:
+        inset 0 1px 0 var(--glass-inset),
+        0 24px 60px var(--modal-shadow),
+        0 0 0 1px var(--line);
+      backdrop-filter: blur(28px) saturate(170%);
+      -webkit-backdrop-filter: blur(28px) saturate(170%);
+      padding: 1rem 1.1rem 1.2rem;
+    }
+    .modal input[type=search], .modal input[type=text], .modal textarea, .modal select {
+      width: 100%; background: var(--surface); border: 1px solid var(--line);
+      border-radius: 12px; padding: 0.65rem 0.75rem; margin-top: 0.5rem;
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .modal textarea { min-height: 120px; resize: vertical; font-family: Lora, serif; }
+    .modal .row { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
+    .search-hits { list-style: none; margin: 0.75rem 0 0; padding: 0; max-height: 40vh; overflow: auto; }
+    .search-hits li { padding: 0.55rem 0.4rem; border-radius: 10px; cursor: pointer; }
+    .search-hits li:hover, .search-hits li.active { background: var(--surface); }
+
+    .recall-box { padding: 1rem; display: flex; flex-direction: column; height: 100%; }
+    .recall-log { flex: 1; overflow: auto; font-size: 0.95rem; line-height: 1.45; }
+    .recall-log .msg {
+      margin: 0.5rem 0; padding: 0.65rem 0.75rem; border-radius: var(--radius);
+      background: var(--surface); border: 1px solid var(--line);
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+      backdrop-filter: blur(12px) saturate(140%);
+      -webkit-backdrop-filter: blur(12px) saturate(140%);
+    }
+    .recall-log .msg.user { border-color: rgba(225, 29, 72, 0.4); box-shadow: inset 0 1px 0 var(--glass-inset), 0 0 0 1px var(--accent-soft); }
+    .gate {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 1rem; text-align: center; padding: 2rem;
+      position: relative; z-index: 1;
+    }
+    .gate p { color: var(--muted); max-width: 28rem; }
+    .hidden { display: none !important; }
+    kbd {
+      font-size: 0.7rem; border: 1px solid var(--line); border-radius: 6px;
+      padding: 0.05rem 0.3rem; background: var(--surface); color: var(--muted);
+      box-shadow: inset 0 1px 0 var(--glass-inset);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header class="appbar">
+      <div class="brand">Chron<span>icle</span></div>
+      <nav class="tabs" id="tabs">
+        <button data-view="timeline" class="active">Timeline</button>
+        <button data-view="notes">Notes</button>
+        <button data-view="brain">Brain</button>
+      </nav>
+      <div class="spacer"></div>
+      <div class="status" id="status">Open a Chronicle folder to begin</div>
+      <div class="app-settings-wrap">
+        <button class="btn btn-theme" id="btn-settings" type="button" title="Ollama settings" aria-label="Ollama settings" aria-expanded="false">⚙</button>
+        <div id="app-settings" class="app-settings hidden" aria-label="Ollama settings">
+          <h4 class="serif">Ollama</h4>
+          <div class="app-settings-status" id="settings-ollama-status">Checking…</div>
+          <label>Chat model
+            <select id="settings-llm"></select>
+            <input id="settings-llm-text" type="text" class="hidden" placeholder="llm model name" />
+          </label>
+          <label>Embed model
+            <select id="settings-embed"></select>
+            <input id="settings-embed-text" type="text" class="hidden" placeholder="embed model name" />
+          </label>
+          <label>Vision model
+            <select id="settings-vision"></select>
+            <input id="settings-vision-text" type="text" class="hidden" placeholder="vision model name" />
+          </label>
+          <label>Base URL
+            <input id="settings-base-url" type="text" placeholder="http://localhost:11434" />
+          </label>
+          <label>num_ctx
+            <input id="settings-num-ctx" type="number" min="1" step="1" />
+          </label>
+          <label>temperature <span style="font-weight:400">(empty = auto / per-feature)</span>
+            <input id="settings-temperature" type="number" min="0" max="2" step="0.05" placeholder="auto" />
+          </label>
+          <div class="mm-settings-actions">
+            <button class="btn primary" id="settings-save" type="button">Save</button>
+          </div>
+          <div class="app-settings-status" id="settings-save-status"></div>
+        </div>
+      </div>
+      <button class="btn btn-theme" id="btn-theme" type="button" title="Theme: Dark" aria-label="Cycle theme">●</button>
+      <button class="btn" id="btn-open">Open folder</button>
+    </header>
+
+    <div id="gate" class="gate">
+      <h1 class="serif">Your second brain, on paper</h1>
+      <p>Pick the synced Chronicle folder. This dashboard reads entries and notes locally via the File System Access API — nothing leaves your machine.</p>
+      <div id="file-origin-banner" class="hidden" style="max-width:28rem;margin:0.75rem 0;padding:0.75rem 1rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--accent-soft);color:var(--ink);font-size:0.85rem;line-height:1.4">
+        Opened as a local file. Connect QR needs the HTTP dashboard — run <code>Start Chronicle.command</code>, then use the browser tab it opens (e.g. <code>http://127.0.0.1:8765/</code>).
+      </div>
+      <button class="btn primary" id="btn-open-main">Open Chronicle folder</button>
+      <p style="font-size:0.8rem"><kbd>/</kbd> search · <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>n</kbd> quick entry · <kbd>Esc</kbd> close</p>
+    </div>
+
+    <main class="layout hidden" id="main">
+      <aside>
+        <div class="panel-head">Tags</div>
+        <ul class="tag-list" id="tag-list"></ul>
+        <div class="panel-head">Today</div>
+        <div class="today-card" id="today-panel">
+          <h3>Still forming</h3>
+          <p>Process on your Mac to fill insights.</p>
+        </div>
+        <div class="panel-head">Connect phone</div>
+        <div class="connect-panel" id="connect-panel">
+          <h3>Scan Mac QR</h3>
+          <p id="connect-hint">Open via <code>Start Chronicle.command</code> (or <code>chronicle serve</code>), then scan in Android Settings.</p>
+          <p id="connect-sync-note" style="font-size:0.75rem;color:var(--muted);margin:0.35rem 0 0">QR pairs Recall/Ask over LAN; journal and vault updates sync via Syncthing plus Mac <code>process</code>/<code>watch</code>.</p>
+          <img class="connect-qr hidden" id="connect-qr" alt="Connect QR code" />
+          <div class="connect-base" id="connect-base">Waiting for serve…</div>
+          <p class="connect-status" id="connect-status"></p>
+        </div>
+      </aside>
+
+      <section class="pane" id="center">
+        <div id="view-timeline">
+          <div class="panel-head">Timeline</div>
+          <ul class="entry-list" id="entry-list"></ul>
+          <div class="detail hidden" id="entry-detail"></div>
+        </div>
+        <div id="view-notes" class="hidden">
+          <div class="panel-head">Notes</div>
+          <ul class="entry-list" id="note-list"></ul>
+          <div class="detail" id="note-detail"></div>
+        </div>
+        <div id="view-brain" class="hidden" style="height:100%">
+          <div id="mindmap-wrap">
+            <div class="mm-toolbar">
+              <input id="mm-search" type="search" placeholder="Focus node…" />
+              <select id="mm-kind">
+                <option value="">All kinds</option>
+                <option>topic</option><option>entry</option><option>person</option>
+                <option>place</option><option>project</option><option>concept</option>
+              </select>
+              <select id="mm-type">
+                <option value="">All entry types</option>
+                <option>log</option><option>idea</option><option>dream</option><option>reflection</option>
+              </select>
+              <button class="btn" id="mm-threads">Threads</button>
+              <button class="btn" id="mm-fit" title="Fit graph into view">⊡ Fit</button>
+              <button class="btn" id="mm-reset">Reset</button>
+              <button class="btn" id="mm-new-note" title="New knowledge note">+ Note</button>
+              <button class="btn" id="mm-settings-btn" title="Mind map settings">⚙</button>
+            </div>
+            <div id="mm-settings" class="mm-settings hidden" aria-label="Mind map settings">
+              <h4 class="serif">Layout &amp; look</h4>
+              <label>Spacing <span class="val" id="mm-cfg-linkDist-val"></span>
+                <input type="range" id="mm-cfg-linkDist" min="80" max="300" step="5" />
+              </label>
+              <label>Repulsion <span class="val" id="mm-cfg-charge-val"></span>
+                <input type="range" id="mm-cfg-charge" min="1500" max="9000" step="100" />
+              </label>
+              <label>Gravity <span class="val" id="mm-cfg-gravity-val"></span>
+                <input type="range" id="mm-cfg-gravity" min="0.02" max="0.15" step="0.005" />
+              </label>
+              <label>Node size <span class="val" id="mm-cfg-nodeSizeMult-val"></span>
+                <input type="range" id="mm-cfg-nodeSizeMult" min="0.5" max="2" step="0.05" />
+              </label>
+              <label>Labels
+                <select id="mm-cfg-labelMode">
+                  <option value="auto">Auto (LOD)</option>
+                  <option value="all">All</option>
+                  <option value="hover">Hover only</option>
+                </select>
+              </label>
+              <label class="mm-check"><input type="checkbox" id="mm-cfg-curvedEdges" /> Curved edges</label>
+              <label class="mm-check"><input type="checkbox" id="mm-cfg-nodeGlow" /> Node glow</label>
+              <label class="mm-check"><input type="checkbox" id="mm-cfg-edgeRelLabels" /> Edge rel labels</label>
+              <label class="mm-check"><input type="checkbox" id="mm-cfg-showLegend" /> Legend</label>
+              <label class="mm-check"><input type="checkbox" id="mm-cfg-freeze" /> Freeze layout</label>
+              <div class="mm-settings-actions">
+                <button class="btn" id="mm-cfg-reset" type="button">Reset defaults</button>
+              </div>
+            </div>
+            <canvas id="mindmap"></canvas>
+            <div id="mm-legend" class="mm-legend">
+              <div class="mm-legend-row" id="mm-legend-kinds"></div>
+              <div class="mm-counts" id="mm-counts"></div>
+            </div>
+            <div class="mm-hint">Scroll zoom · drag pan · click inspect · dbl-click focus · Esc clear · ⚙ settings</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="right">
+        <div id="right-default">
+          <div class="panel-head" id="right-title">Detail</div>
+          <div id="right-body" style="padding:0.75rem 1rem 2rem;font-size:0.9rem;color:var(--muted)">
+            Select an entry or graph node.
+          </div>
+        </div>
+        <div id="right-brain" class="brain-right hidden">
+          <div class="brain-chat collapsed" id="brain-chat">
+            <div class="brain-chat-head">
+              <span class="serif">Brain assistant</span>
+              <div class="brain-launchers" role="group" aria-label="Brain assistant tools">
+                <button class="btn brain-tool-toggle" id="brain-chat-toggle" type="button"
+                  aria-controls="brain-chat-body" aria-expanded="false">Chat</button>
+                <button class="btn brain-tool-toggle" id="brain-resume-toggle" type="button"
+                  aria-controls="brain-resume" aria-expanded="false">Resume</button>
+              </div>
+            </div>
+            <div class="brain-chat-body" id="brain-chat-body">
+              <div class="brain-scope" id="brain-scope" role="group" aria-label="Recall scope">
+                <button type="button" data-scope="all" class="active" aria-pressed="true">All</button>
+                <button type="button" data-scope="journal" aria-pressed="false">Journal</button>
+                <button type="button" data-scope="kb" aria-pressed="false">Knowledge</button>
+              </div>
+              <div class="recall-log" id="recall-log" aria-live="polite" aria-label="Brain assistant conversation"></div>
+              <div class="brain-enrich">
+                <button class="btn" id="enrich-kb" type="button" title="Enrich KB notes for resume retrieval (may take a while)">Enrich KB</button>
+                <span class="brain-enrich-status" id="enrich-kb-status" role="status" aria-live="polite"></span>
+              </div>
+              <div class="brain-ask">
+                <input id="recall-input" type="text" aria-label="Ask your brain"
+                  placeholder="Ask your brain…" style="padding:0.5rem;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:0.85rem" />
+                <button class="btn primary" id="recall-send" type="button">Ask</button>
+              </div>
+            </div>
+            <div class="brain-resume hidden" id="brain-resume">
+              <input id="resume-role" type="text" aria-label="Role for resume"
+                placeholder="Resume for role…" />
+              <button class="btn" id="resume-send" type="button">Build resume</button>
+            </div>
+          </div>
+          <div class="brain-detail">
+            <div class="panel-head" id="brain-detail-title">Detail</div>
+            <div id="brain-detail-body" style="padding:0.75rem 1rem 2rem;font-size:0.9rem;color:var(--muted)">
+              Select a graph node, or ask above.
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="overlay" id="search-overlay">
+    <div class="modal">
+      <div class="serif">Search</div>
+      <input type="search" id="search-input" placeholder="Find entries, tags, notes…" autofocus />
+      <ul class="search-hits" id="search-hits"></ul>
+    </div>
+  </div>
+
+  <div class="overlay" id="entry-overlay">
+    <div class="modal">
+      <div class="serif">Quick entry</div>
+      <div class="row">
+        <select id="qe-type">
+          <option value="log">log</option>
+          <option value="idea">idea</option>
+          <option value="dream">dream</option>
+          <option value="reflection">reflection</option>
+        </select>
+        <input type="text" id="qe-tags" placeholder="tags (comma)" style="flex:1" />
+        <input type="number" id="qe-mood" min="1" max="5" placeholder="mood" style="width:4.5rem" />
+      </div>
+      <textarea id="qe-text" placeholder="What's on your mind?"></textarea>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn" id="qe-cancel">Cancel</button>
+        <button class="btn primary" id="qe-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const DB_NAME = "chronicle-dashboard";
+  const DB_STORE = "handles";
+  let SERVE = "http://127.0.0.1:8765";
+
+  // Prefer same-origin when the dashboard is served by chronicle serve (/).
+  // file:// pages always use loopback; LAN advertise host is for the phone QR only.
+  if (typeof location !== "undefined" && /^https?:$/i.test(location.protocol)) {
+    SERVE = location.origin;
+  }
+
+  const SERVE_PORT_SCAN = 50; // match chronicle find_free_port attempts
+
+  function localServeCandidates(preferredPorts) {
+    const ports = [...new Set(
+      (preferredPorts || []).map(Number).filter((p) => p > 0 && p < 65536),
+    )];
+    if (!ports.length) ports.push(8765);
+    const out = [];
+    if (typeof location !== "undefined" && /^https?:$/i.test(location.protocol)) {
+      out.push(location.origin);
+    }
+    for (const p of ports) {
+      out.push(`http://127.0.0.1:${p}`, `http://localhost:${p}`);
+    }
+    // Full fallback range — preferred port is often busy (zombies on 8768+).
+    const start = ports[0] || 8765;
+    for (let p = start; p < start + SERVE_PORT_SCAN; p++) {
+      out.push(`http://127.0.0.1:${p}`);
+    }
+    return [...new Set(out)];
+  }
+
+  // chronicle serve writes its chosen port to index/serve.json (auto port fallback).
+  // Never use advertise host / 0.0.0.0 for browser fetches — always loopback (or same-origin).
+  async function readServeJsonPort(rootHandle) {
+    try {
+      const idx = await rootHandle.getDirectoryHandle("index");
+      const info = await readJsonFile(idx, "serve.json");
+      if (info && info.port) return Number(info.port);
+    } catch {}
+    return null;
+  }
+
+  async function resolveServe(rootHandle) {
+    const jsonPort = rootHandle ? await readServeJsonPort(rootHandle) : null;
+    if (jsonPort) {
+      // Prefer vault-recorded port even when page is same-origin on a stale tab.
+      SERVE = `http://127.0.0.1:${jsonPort}`;
+      return jsonPort;
+    }
+    if (typeof location !== "undefined" && /^https?:$/i.test(location.protocol)) {
+      SERVE = location.origin;
+      try { return Number(new URL(SERVE).port) || 8765; } catch { return 8765; }
+    }
+    return 8765;
+  }
+
+  async function fetchConnect(base) {
+    const r = await fetch(`${base}/connect`, { signal: AbortSignal.timeout(1200) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
+  async function refreshConnectPanel() {
+    const baseEl = $("connect-base");
+    const statusEl = $("connect-status");
+    const qrEl = $("connect-qr");
+    const hintEl = $("connect-hint");
+    if (!baseEl) return;
+    const preferred = [];
+    try {
+      const u = new URL(SERVE);
+      if (u.port) preferred.push(Number(u.port));
+    } catch {}
+    if (state.root) {
+      const jp = await readServeJsonPort(state.root);
+      if (jp) preferred.unshift(jp);
+    }
+    if (/^https?:$/i.test(location.protocol)) {
+      try {
+        const lp = Number(location.port) || (location.protocol === "https:" ? 443 : 80);
+        if (lp && lp !== 80 && lp !== 443) preferred.unshift(lp);
+      } catch {}
+    }
+    preferred.push(8765);
+    const tried = localServeCandidates(preferred);
+    let info = null;
+    let used = null;
+    // Probe in small parallel batches so a wide port scan stays snappy.
+    const batchSize = 8;
+    for (let i = 0; i < tried.length && !used; i += batchSize) {
+      const batch = tried.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (base) => {
+          try {
+            return { base, info: await fetchConnect(base) };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const hit = results.find(Boolean);
+      if (hit) {
+        info = hit.info;
+        used = hit.base;
+        SERVE = hit.base;
+      }
+    }
+    if (info && used) {
+      const phoneBase = info.base || used;
+      baseEl.textContent = phoneBase;
+      statusEl.textContent = info.kb_proxied ? "Online · Ask/Resume proxied" : "Online";
+      statusEl.style.color = "var(--reflection)";
+      if (hintEl) {
+        hintEl.textContent = "Scan in Android Settings → Scan Mac QR.";
+        hintEl.classList.add("hidden");
+      }
+      // QR from the reachable API host (loopback or same-origin), not the LAN advertise URL.
+      qrEl.src = `${used}/connect/qr.svg?t=${Date.now()}`;
+      qrEl.classList.remove("hidden");
+      return;
+    }
+    baseEl.textContent = "Serve offline";
+    statusEl.textContent = "Start with: Start Chronicle.command (or chronicle serve)";
+    statusEl.style.color = "var(--muted)";
+    if (hintEl) {
+      hintEl.innerHTML = "Open via <code>Start Chronicle.command</code> (or <code>chronicle serve</code>), then scan in Android Settings.";
+      hintEl.classList.remove("hidden");
+    }
+    qrEl.classList.add("hidden");
+    qrEl.removeAttribute("src");
+  }
+
+  const state = {
+    root: null,
+    entries: [],
+    tags: null,
+    graph: null,
+    insights: {},
+    notes: [],
+    kbNotes: [],
+    view: "timeline",
+    selectedId: null,
+    selectedNode: null,
+    filterTag: null,
+    searchHit: 0,
+    chatScope: "all",
+    chatHistory: [],
+    chatCollapsed: true,
+    resumeExpanded: false,
+    mm: {
+      scale: 1, ox: 0, oy: 0, positions: {}, focus: null, threadMode: false,
+      sim: {}, alpha: 0, edges: [], hoverId: null, dragNode: null, cam: null, raf: 0,
+      didAutoFit: false, settingsOpen: false, degree: {},
+      cfg: null,
+    },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const status = (t) => { $("status").textContent = t; };
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function saveHandle(handle) {
+    const db = await openDB();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).put(handle, "chronicle");
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function loadHandle() {
+    const db = await openDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const r = tx.objectStore(DB_STORE).get("chronicle");
+      r.onsuccess = () => res(r.result || null);
+      r.onerror = () => rej(r.error);
+    });
+  }
+
+  async function verifyPermission(handle, mode = "readwrite") {
+    const opts = { mode };
+    if ((await handle.queryPermission(opts)) === "granted") return true;
+    if ((await handle.requestPermission(opts)) === "granted") return true;
+    return false;
+  }
+
+  async function pickFolder() {
+    if (!window.showDirectoryPicker) {
+      alert("File System Access API not available. Use Chrome/Edge.");
+      return;
+    }
+    const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+    await saveHandle(handle);
+    await mount(handle);
+  }
+
+  async function mount(handle) {
+    if (!(await verifyPermission(handle))) {
+      status("Permission denied");
+      return;
+    }
+    state.root = handle;
+    $("gate").classList.add("hidden");
+    $("main").classList.remove("hidden");
+    status(handle.name);
+    await resolveServe(handle);
+    await reloadAll();
+    await refreshConnectPanel();
+    if (!state._connectTimer) {
+      // Poll often at first so Connect flips online soon after serve starts.
+      let ticks = 0;
+      state._connectTimer = setInterval(() => {
+        refreshConnectPanel();
+        ticks += 1;
+        if (ticks === 20) {
+          clearInterval(state._connectTimer);
+          state._connectTimer = setInterval(() => { refreshConnectPanel(); }, 15000);
+        }
+      }, 1500);
+    }
+  }
+
+  async function getDir(handle, parts, create = false) {
+    let cur = handle;
+    for (const p of parts) {
+      cur = await cur.getDirectoryHandle(p, { create });
+    }
+    return cur;
+  }
+
+  async function readJsonFile(dirHandle, name) {
+    try {
+      const fh = await dirHandle.getFileHandle(name);
+      const file = await fh.getFile();
+      return JSON.parse(await file.text());
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeJsonAtomic(dirHandle, name, data) {
+    const tmp = `.${name}.${Date.now()}.tmp`;
+    const fh = await dirHandle.getFileHandle(tmp, { create: true });
+    const w = await fh.createWritable();
+    await w.write(JSON.stringify(data, null, 2) + "\n");
+    await w.close();
+    // rename via new file + remove tmp (FS Access has no rename; write final then remove tmp)
+    const final = await dirHandle.getFileHandle(name, { create: true });
+    const fw = await final.createWritable();
+    await fw.write(JSON.stringify(data, null, 2) + "\n");
+    await fw.close();
+    try { await dirHandle.removeEntry(tmp); } catch {}
+  }
+
+  async function appendJsonl(dirHandle, name, obj) {
+    let prev = "";
+    try {
+      const fh = await dirHandle.getFileHandle(name);
+      prev = await (await fh.getFile()).text();
+    } catch {}
+    const fh = await dirHandle.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(prev + JSON.stringify(obj) + "\n");
+    await w.close();
+  }
+
+  async function writeTextFile(dirHandle, name, text) {
+    const fh = await dirHandle.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(text);
+    await w.close();
+  }
+
+  async function readTextFile(dirHandle, name) {
+    try {
+      const fh = await dirHandle.getFileHandle(name);
+      return await (await fh.getFile()).text();
+    } catch {
+      return null;
+    }
+  }
+
+  async function readVaultText(relPath) {
+    const parts = relPath.split("/").filter(Boolean);
+    if (!parts.length || !state.root) return null;
+    const name = parts.pop();
+    try {
+      const dir = await getDir(state.root, parts, false);
+      return await readTextFile(dir, name);
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeVaultText(relPath, text) {
+    const parts = relPath.split("/").filter(Boolean);
+    const name = parts.pop();
+    const dir = await getDir(state.root, parts, true);
+    await writeTextFile(dir, name, text);
+  }
+
+  async function walkJson(dirHandle, acc = [], prefix = []) {
+    for await (const [name, h] of dirHandle.entries()) {
+      if (h.kind === "directory") {
+        await walkJson(h, acc, prefix.concat(name));
+      } else if (name.endsWith(".json") && !name.includes(".sync-conflict")) {
+        const file = await h.getFile();
+        try {
+          const data = JSON.parse(await file.text());
+          acc.push({ path: prefix.concat(name).join("/"), data, handle: h, dir: dirHandle, name });
+        } catch {}
+      }
+    }
+    return acc;
+  }
+
+  async function walkMd(dirHandle, acc = [], prefix = []) {
+    for await (const [name, h] of dirHandle.entries()) {
+      if (h.kind === "directory") await walkMd(h, acc, prefix.concat(name));
+      else if (name.endsWith(".md")) {
+        const file = await h.getFile();
+        acc.push({ path: prefix.concat(name).join("/"), text: await file.text(), name });
+      }
+    }
+    return acc;
+  }
+
+  async function reloadAll() {
+    const root = state.root;
+    try {
+      const entriesDir = await getDir(root, ["entries"]);
+      const files = await walkJson(entriesDir);
+      state.entries = files.map(f => f.data).filter(e => e && e.id).sort((a,b) => (b.ts || "").localeCompare(a.ts || ""));
+    } catch { state.entries = []; }
+
+    try {
+      const tagsDir = await getDir(root, ["brain"]);
+      state.tags = await readJsonFile(tagsDir, "tags.json");
+      state.graph = await readJsonFile(tagsDir, "graph.json");
+    } catch { state.tags = null; state.graph = null; }
+
+    state.insights = {};
+    try {
+      const insRoot = await getDir(root, ["brain", "insights"]);
+      for await (const [year, yh] of insRoot.entries()) {
+        if (yh.kind !== "directory") continue;
+        for await (const [name, fh] of yh.entries()) {
+          if (!name.endsWith(".json")) continue;
+          const data = JSON.parse(await (await fh.getFile()).text());
+          state.insights[data.date] = data;
+        }
+      }
+    } catch {}
+
+    try {
+      const notesDir = await getDir(root, ["notes"]);
+      state.notes = await walkMd(notesDir);
+      state.notes.sort((a,b) => b.path.localeCompare(a.path));
+    } catch { state.notes = []; }
+
+    try {
+      const kbDir = await getDir(root, ["kb", "notes"]);
+      state.kbNotes = await walkMd(kbDir);
+      state.kbNotes = state.kbNotes.map(n => ({ ...n, path: "kb/notes/" + n.path }));
+      state.kbNotes.sort((a,b) => b.path.localeCompare(a.path));
+    } catch { state.kbNotes = []; }
+
+    renderTags();
+    renderTimeline();
+    renderNotes();
+    renderToday();
+    if (state.view === "brain") drawMindmap();
+    status(`${root.name} · ${state.entries.length} entries`);
+    await resolveServe(root);
+    await refreshConnectPanel();
+  }
+
+  function renderTags() {
+    const ul = $("tag-list");
+    ul.innerHTML = "";
+    const counts = {};
+    state.entries.forEach(e => (e.tags || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }));
+    if (state.tags && state.tags.tags) {
+      state.tags.tags.forEach(t => { counts[t.canonical] = Math.max(counts[t.canonical] || 0, t.count); });
+    }
+    const all = document.createElement("li");
+    all.textContent = "All";
+    all.className = state.filterTag ? "" : "active";
+    all.onclick = () => { state.filterTag = null; renderTags(); renderTimeline(); };
+    ul.appendChild(all);
+    Object.keys(counts).sort().forEach(tag => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${tag}</span><span>${counts[tag]}</span>`;
+      if (state.filterTag === tag) li.className = "active";
+      li.onclick = () => { state.filterTag = tag; renderTags(); renderTimeline(); };
+      ul.appendChild(li);
+    });
+  }
+
+  function filteredEntries() {
+    let list = state.entries;
+    if (state.filterTag) list = list.filter(e => (e.tags || []).includes(state.filterTag) || (e.tags || []).map(t => t.replace(/^#/, "")).includes(state.filterTag));
+    return list;
+  }
+
+  function renderTimeline() {
+    const ul = $("entry-list");
+    const detail = $("entry-detail");
+    const list = filteredEntries();
+    ul.innerHTML = "";
+    list.forEach((e, idx) => {
+      const li = document.createElement("li");
+      if (e.id === state.selectedId) li.classList.add("selected");
+      if (e.processed) li.classList.add("locked");
+      const preview = (e.text || "").trim().split("\n")[0] || (e.audio ? "(voice)" : "(empty)");
+      li.innerHTML = `<div class="entry-meta"><span class="type-dot type-${e.type}"></span><span>${e.type}</span><span>${(e.ts || "").slice(0,16)}</span>${e.processed ? "<span>🔒</span>" : ""}</div><div class="entry-preview">${escapeHtml(preview.slice(0,140))}</div>`;
+      li.onclick = () => selectEntry(e.id);
+      li.dataset.id = e.id;
+      ul.appendChild(li);
+    });
+    if (state.selectedId) {
+      const e = state.entries.find(x => x.id === state.selectedId);
+      if (e) showEntryDetail(e);
+      else { detail.classList.add("hidden"); }
+    }
+  }
+
+  function showEntryDetail(e) {
+    const detail = $("entry-detail");
+    detail.classList.remove("hidden");
+    const related = (state.insights[(e.ts || "").slice(0,10)] || {}).related_entries || {};
+    const rel = related[e.id] || [];
+    detail.innerHTML = `
+      <h2 class="serif">${escapeHtml(e.id)}</h2>
+      <div class="entry-meta"><span class="type-dot type-${e.type}"></span> ${e.type} · ${escapeHtml(e.ts || "")} · mood ${e.mood ?? "—"} ${e.processed ? "· locked" : ""}</div>
+      <div class="chips">${(e.tags || []).map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>
+      <div class="body">${escapeHtml(e.text || "")}</div>
+      ${rel.length ? `<h3 class="serif" style="margin-top:1.5rem;font-size:1rem">Related</h3><ul>${rel.map(id => `<li><a href="#" data-goto="${id}">${id}</a></li>`).join("")}</ul>` : ""}
+    `;
+    detail.querySelectorAll("[data-goto]").forEach(a => a.onclick = (ev) => { ev.preventDefault(); selectEntry(a.dataset.goto); });
+    $("right-title").textContent = "Entry";
+    $("right-body").innerHTML = `<p><strong>${e.id}</strong></p><p>${(e.images || []).length} images · ${(e.audio || []).length} audio</p>`;
+  }
+
+  function selectEntry(id) {
+    state.selectedId = id;
+    renderTimeline();
+    const el = document.querySelector(`#entry-list li[data-id="${CSS.escape(id)}"]`);
+    if (el) el.scrollIntoView({ block: "nearest" });
+  }
+
+  function renderNotes() {
+    const ul = $("note-list");
+    ul.innerHTML = "";
+    state.notes.forEach(n => {
+      const li = document.createElement("li");
+      li.innerHTML = `<div class="entry-preview">${escapeHtml(n.path)}</div>`;
+      li.onclick = () => {
+        $("note-detail").innerHTML = `<h2 class="serif">${escapeHtml(n.path)}</h2><pre class="body" style="font-family:Lora,serif;white-space:pre-wrap">${escapeHtml(n.text)}</pre>`;
+      };
+      ul.appendChild(li);
+    });
+  }
+
+  function renderToday() {
+    const today = new Date();
+    const key = today.toISOString().slice(0,10);
+    // Prefer local date from timezone offset of first entry or system
+    const localKey = new Date(today.getTime() - today.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const ins = state.insights[localKey] || state.insights[key];
+    const el = $("today-panel");
+    if (!ins) {
+      el.innerHTML = `<h3 class="serif">Today</h3><p>Your brain is still forming — process on your Mac.</p>`;
+      return;
+    }
+    el.innerHTML = `
+      <h3 class="serif">Today</h3>
+      <p>${escapeHtml(ins.summary || "")}</p>
+      <p>Mood avg: ${ins.mood_avg ?? "—"}</p>
+      <p>Themes: ${(ins.themes || []).slice(0,5).map(escapeHtml).join(", ") || "—"}</p>
+      ${(ins.on_this_day || []).length ? `<p>On this day: ${ins.on_this_day.slice(0,3).map(escapeHtml).join(", ")}</p>` : ""}
+      ${(ins.time_capsules || []).length ? `<p>Capsules due: ${ins.time_capsules.length}</p>` : ""}
+    `;
+  }
+
+  function setView(name) {
+    state.view = name;
+    document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+    ["timeline","notes","brain"].forEach(v => {
+      const el = $(`view-${v}`);
+      if (el) el.classList.toggle("hidden", v !== name);
+    });
+    const brainRight = $("right-brain");
+    const defaultRight = $("right-default");
+    if (brainRight && defaultRight) {
+      const onBrain = name === "brain";
+      brainRight.classList.toggle("hidden", !onBrain);
+      defaultRight.classList.toggle("hidden", onBrain);
+    }
+    if (name === "brain") {
+      resizeMindmap();
+      drawMindmap();
+    }
+  }
+
+  function detailBody() {
+    return state.view === "brain" ? $("brain-detail-body") : $("right-body");
+  }
+  function detailTitle() {
+    return state.view === "brain" ? $("brain-detail-title") : $("right-title");
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  }
+
+  // —— MindMap (KnowledgeBrain-inspired Canvas force graph) ——
+  const MM_ALPHA_MIN = 0.005;
+  const MM_LINK_STRENGTH = 0.085;
+  const MM_DAMPING = 0.84;
+  const MM_SCALE_MIN = 0.15;
+  const MM_SCALE_MAX = 4;
+  const MM_SETTINGS_KEY = "chronicle.mm.settings";
+  const MM_KIND_COLORS = {
+    topic:   "#C41E3A",
+    entry:   "#7A3F48",
+    person:  "#3D6E8C",
+    place:   "#2A7A56",
+    project: "#5C4F8A",
+    concept: "#A67C3D",
+  };
+  const MM_KIND_FALLBACK = "#8B4550";
+  const MM_KIND_ORDER = ["topic", "entry", "person", "place", "project", "concept"];
+
+  const MM_CFG_DEFAULTS = {
+    linkDist: 170,
+    charge: 5200,
+    chargeCap: 650,
+    gravity: 0.07,
+    collidePad: 22,
+    nodeSizeMult: 1,
+    labelMode: "auto", // auto | all | hover
+    curvedEdges: true,
+    nodeGlow: false,
+    edgeRelLabels: true,
+    showLegend: true,
+    freeze: false,
+  };
+
+  function mmDefaultCfg() {
+    return { ...MM_CFG_DEFAULTS };
+  }
+
+  function loadMmSettings() {
+    const cfg = mmDefaultCfg();
+    try {
+      const raw = localStorage.getItem(MM_SETTINGS_KEY);
+      if (!raw) return cfg;
+      const saved = JSON.parse(raw);
+      if (!saved || typeof saved !== "object") return cfg;
+      for (const k of Object.keys(MM_CFG_DEFAULTS)) {
+        if (saved[k] != null) cfg[k] = saved[k];
+      }
+      cfg.linkDist = Math.min(300, Math.max(80, Number(cfg.linkDist) || MM_CFG_DEFAULTS.linkDist));
+      cfg.charge = Math.min(9000, Math.max(1500, Number(cfg.charge) || MM_CFG_DEFAULTS.charge));
+      cfg.gravity = Math.min(0.15, Math.max(0.02, Number(cfg.gravity) || MM_CFG_DEFAULTS.gravity));
+      cfg.nodeSizeMult = Math.min(2, Math.max(0.5, Number(cfg.nodeSizeMult) || 1));
+      if (!["auto", "all", "hover"].includes(cfg.labelMode)) cfg.labelMode = "auto";
+      cfg.curvedEdges = !!cfg.curvedEdges;
+      cfg.nodeGlow = !!cfg.nodeGlow;
+      cfg.edgeRelLabels = !!cfg.edgeRelLabels;
+      cfg.showLegend = cfg.showLegend !== false;
+      cfg.freeze = !!cfg.freeze;
+      cfg.chargeCap = MM_CFG_DEFAULTS.chargeCap;
+      cfg.collidePad = MM_CFG_DEFAULTS.collidePad;
+    } catch {}
+    return cfg;
+  }
+
+  function saveMmSettings() {
+    try {
+      const c = state.mm.cfg;
+      localStorage.setItem(MM_SETTINGS_KEY, JSON.stringify({
+        linkDist: c.linkDist,
+        charge: c.charge,
+        gravity: c.gravity,
+        nodeSizeMult: c.nodeSizeMult,
+        labelMode: c.labelMode,
+        curvedEdges: c.curvedEdges,
+        nodeGlow: c.nodeGlow,
+        edgeRelLabels: c.edgeRelLabels,
+        showLegend: c.showLegend,
+        freeze: c.freeze,
+      }));
+    } catch {}
+  }
+
+  state.mm.cfg = loadMmSettings();
+
+  function mmKindColor(kind) {
+    return MM_KIND_COLORS[kind] || MM_KIND_FALLBACK;
+  }
+
+  function mmMixHex(hex, to, p) {
+    const c = String(hex || "#888").replace("#", "");
+    if (c.length < 6) return hex;
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    const f = x => Math.round(x + (to - x) * p / 100);
+    return `rgb(${f(r)},${f(g)},${f(b)})`;
+  }
+
+  function mmLighten(h, p) { return mmMixHex(h, 255, p); }
+  function mmDarken(h, p) { return mmMixHex(h, 0, p); }
+
+  function mmDegree(id) {
+    return state.mm.degree[id] || 0;
+  }
+
+  function rebuildDegree(edges) {
+    const deg = {};
+    for (const e of edges || []) {
+      deg[e.from] = (deg[e.from] || 0) + 1;
+      deg[e.to] = (deg[e.to] || 0) + 1;
+    }
+    state.mm.degree = deg;
+  }
+
+  function nodeRadius(n) {
+    const mult = state.mm.cfg.nodeSizeMult || 1;
+    const deg = mmDegree(n.id);
+    let r;
+    if (n.kind === "entry") r = 5;
+    else if (n.kind === "topic") r = Math.min(14, 8 + Math.sqrt(deg) * 1.6);
+    else if (n.kind === "project") r = 9;
+    else if (n.kind === "person" || n.kind === "place") r = 8;
+    else r = Math.min(12, 7 + Math.sqrt(deg) * 1.4);
+    return r * mult;
+  }
+
+  function seedLayout(nodes) {
+    const pos = {};
+    const topics = nodes.filter(n => n.kind !== "entry");
+    const entries = nodes.filter(n => n.kind === "entry");
+    const R = 320;
+    topics.forEach((n, i) => {
+      const a = (i / Math.max(topics.length, 1)) * Math.PI * 2;
+      pos[n.id] = { x: Math.cos(a) * R, y: Math.sin(a) * R };
+    });
+    entries.forEach((n, i) => {
+      const a = (i / Math.max(entries.length, 1)) * Math.PI * 2;
+      pos[n.id] = { x: Math.cos(a) * (R + 200), y: Math.sin(a) * (R + 200) };
+    });
+    return pos;
+  }
+
+  function clearMmFocus(refit = true) {
+    const hadFocus = !!state.mm.focus;
+    state.mm.focus = null;
+    state.selectedNode = null;
+    if (state.view === "brain") {
+      // Reheat when leaving a 2-hop focus so restored nodes can settle
+      drawMindmap({ alpha: hadFocus ? 0.55 : 0.2, reheat: hadFocus });
+      if (refit) fitMindmap(true);
+      else paintMindmap();
+    }
+  }
+
+  function flyToNode(id, scaleFloor = 1.15) {
+    const p = state.mm.sim[id];
+    if (!p) return;
+    const k = Math.max(state.mm.scale, scaleFloor);
+    animateCamera(k, -p.x * k, -p.y * k, 380);
+  }
+
+  function focusNode(id) {
+    state.mm.focus = id;
+    showNodeSheet(id);
+    drawMindmap({ alpha: 0.85 });
+    fitMindmap(true);
+  }
+
+  function visibleGraph() {
+    if (!state.graph) return { nodes: [], edges: [] };
+    let nodes = state.graph.nodes.filter(n => !n.hidden);
+    let edges = state.graph.edges || [];
+    const kind = $("mm-kind").value;
+    const etype = $("mm-type").value;
+    if (kind) nodes = nodes.filter(n => n.kind === kind);
+    if (etype) {
+      const ids = new Set(state.entries.filter(e => e.type === etype).map(e => `entry:${e.id}`));
+      nodes = nodes.filter(n => n.kind !== "entry" || ids.has(n.id));
+    }
+    if (state.mm.threadMode) {
+      edges = edges.filter(e => e.rel === "continues");
+      const keep = new Set();
+      edges.forEach(e => { keep.add(e.from); keep.add(e.to); });
+      nodes = nodes.filter(n => keep.has(n.id) || n.kind === "topic");
+    }
+    if (state.mm.focus) {
+      const keep = new Set([state.mm.focus]);
+      edges.forEach(e => {
+        if (e.from === state.mm.focus || e.to === state.mm.focus) {
+          keep.add(e.from); keep.add(e.to);
+        }
+      });
+      // 2-hop
+      edges.forEach(e => {
+        if (keep.has(e.from) || keep.has(e.to)) { keep.add(e.from); keep.add(e.to); }
+      });
+      nodes = nodes.filter(n => keep.has(n.id));
+    }
+    const ids = new Set(nodes.map(n => n.id));
+    edges = edges.filter(e => ids.has(e.from) && ids.has(e.to));
+    return { nodes, edges };
+  }
+
+  function reheatSim(amount = 0.75) {
+    state.mm.alpha = Math.max(state.mm.alpha || 0, amount);
+    kickMindmap();
+  }
+
+  function syncSim(nodes, edges) {
+    rebuildDegree(edges);
+    const sim = state.mm.sim;
+    const ids = new Set(nodes.map(n => n.id));
+    for (const id of Object.keys(sim)) {
+      if (!ids.has(id)) delete sim[id];
+    }
+    const seeds = seedLayout(nodes);
+    const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+    nodes.forEach(n => {
+      const r = nodeRadius(n);
+      let s = sim[n.id];
+      if (!s) {
+        let x, y;
+        const nbr = edges.find(e => e.from === n.id || e.to === n.id);
+        if (nbr) {
+          const oid = nbr.from === n.id ? nbr.to : nbr.from;
+          const o = sim[oid];
+          if (o) {
+            x = o.x + (Math.random() - 0.5) * 40;
+            y = o.y + (Math.random() - 0.5) * 40;
+          }
+        }
+        if (x == null) {
+          const seed = seeds[n.id] || { x: 0, y: 0 };
+          x = seed.x + (Math.random() - 0.5) * 12;
+          y = seed.y + (Math.random() - 0.5) * 12;
+        }
+        s = { x, y, vx: 0, vy: 0, r, baseR: r, fx: null, fy: null, hoverR: r };
+        sim[n.id] = s;
+      } else {
+        s.baseR = r;
+        if (s.hoverR == null) s.hoverR = r;
+      }
+      s.node = byId[n.id];
+    });
+    state.mm.edges = edges;
+    state.mm.positions = sim;
+    updateMmLegend(nodes.length, edges.length);
+  }
+
+  function tickSim() {
+    const cfg = state.mm.cfg;
+    const sim = state.mm.sim;
+    const nodes = Object.values(sim);
+    const edges = state.mm.edges || [];
+    let alpha = state.mm.alpha || 0;
+    const dragging = !!state.mm.dragNode;
+    const frozen = !!cfg.freeze && !dragging;
+    const active = !frozen && (alpha >= MM_ALPHA_MIN || dragging);
+    const aEff = Math.max(alpha, dragging ? 0.28 : 0.12);
+    const linkDist = cfg.linkDist;
+    const charge = cfg.charge;
+    const chargeCap = cfg.chargeCap;
+    const gravity = cfg.gravity;
+    const collidePad = cfg.collidePad;
+
+    if (active) {
+      for (const e of edges) {
+        const a = sim[e.from], b = sim[e.to];
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.01;
+        const continues = e.rel === "continues";
+        const rest = continues ? Math.min(90, linkDist * 0.45) : linkDist;
+        const strength = continues ? 0.14 : MM_LINK_STRENGTH;
+        const force = ((dist - rest) / dist) * strength * aEff;
+        const fx = dx * force, fy = dy * force;
+        if (a.fx == null) { a.vx += fx; a.vy += fy; }
+        if (b.fx == null) { b.vx -= fx; b.vy -= fy; }
+      }
+
+      const n = nodes.length;
+      for (let i = 0; i < n; i++) {
+        const a = nodes[i];
+        for (let j = i + 1; j < n; j++) {
+          const b = nodes[j];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          let dist2 = dx * dx + dy * dy;
+          if (dist2 > chargeCap * chargeCap) continue;
+          if (dist2 < 1) {
+            dx = (Math.random() - 0.5) * 0.1;
+            dy = (Math.random() - 0.5) * 0.1;
+            dist2 = dx * dx + dy * dy;
+          }
+          const dist = Math.sqrt(dist2);
+          const force = (charge * aEff) / dist2;
+          const fx = (dx / dist) * force, fy = (dy / dist) * force;
+          if (a.fx == null) { a.vx -= fx; a.vy -= fy; }
+          if (b.fx == null) { b.vx += fx; b.vy += fy; }
+        }
+      }
+
+      for (let i = 0; i < n; i++) {
+        const a = nodes[i];
+        for (let j = i + 1; j < n; j++) {
+          const b = nodes[j];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          let dist = Math.hypot(dx, dy) || 0.01;
+          const minDist = (a.hoverR || a.r) + (b.hoverR || b.r) + collidePad;
+          if (dist >= minDist) continue;
+          const overlap = (minDist - dist) / dist * 0.5;
+          const ox = dx * overlap, oy = dy * overlap;
+          if (a.fx == null) { a.x -= ox; a.y -= oy; a.vx -= ox * 0.3; a.vy -= oy * 0.3; }
+          if (b.fx == null) { b.x += ox; b.y += oy; b.vx += ox * 0.3; b.vy += oy * 0.3; }
+        }
+      }
+
+      for (const p of nodes) {
+        if (p.fx != null) {
+          p.x = p.fx; p.y = p.fy; p.vx = 0; p.vy = 0;
+          continue;
+        }
+        p.vx += -p.x * gravity * aEff;
+        p.vy += -p.y * gravity * aEff;
+        p.vx *= MM_DAMPING;
+        p.vy *= MM_DAMPING;
+        p.x += p.vx;
+        p.y += p.vy;
+      }
+
+      if (!dragging) {
+        state.mm.alpha = alpha * 0.915;
+        if (state.mm.alpha < MM_ALPHA_MIN) state.mm.alpha = 0;
+      }
+    } else if (frozen) {
+      state.mm.alpha = 0;
+    }
+
+    // Hover / selection radius spring
+    let hoverAnim = false;
+    const hoverId = state.mm.hoverId;
+    const selId = state.selectedNode;
+    for (const [id, p] of Object.entries(sim)) {
+      const boost = (id === hoverId || id === selId) ? 1.32 : 1;
+      const target = p.baseR * boost;
+      const next = p.hoverR + (target - p.hoverR) * 0.22;
+      if (Math.abs(next - target) > 0.05) hoverAnim = true;
+      p.hoverR = next;
+      p.r = next;
+    }
+
+    // Auto-fit once after first settle
+    if (!dragging && !frozen && (state.mm.alpha || 0) < MM_ALPHA_MIN && !state.mm.didAutoFit && nodes.length) {
+      state.mm.didAutoFit = true;
+      fitMindmap(true);
+      return true;
+    }
+
+    return (!frozen && (state.mm.alpha || 0) >= MM_ALPHA_MIN) || dragging || hoverAnim || !!state.mm.cam;
+  }
+
+  function kickMindmap() {
+    if (state.mm.raf) return;
+    const loop = () => {
+      state.mm.raf = 0;
+      if (state.view !== "brain") return;
+      tickCamera();
+      const busy = tickSim();
+      paintMindmap();
+      if (busy || state.mm.cam || state.mm.dragNode) {
+        state.mm.raf = requestAnimationFrame(loop);
+      }
+    };
+    state.mm.raf = requestAnimationFrame(loop);
+  }
+
+  function animateCamera(toScale, toOx, toOy, ms = 420) {
+    state.mm.cam = {
+      t0: performance.now(),
+      ms,
+      fromS: state.mm.scale, fromOx: state.mm.ox, fromOy: state.mm.oy,
+      toS: toScale, toOx, toOy,
+    };
+    kickMindmap();
+  }
+
+  function tickCamera() {
+    const cam = state.mm.cam;
+    if (!cam) return;
+    const t = Math.min(1, (performance.now() - cam.t0) / cam.ms);
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    state.mm.scale = cam.fromS + (cam.toS - cam.fromS) * e;
+    state.mm.ox = cam.fromOx + (cam.toOx - cam.fromOx) * e;
+    state.mm.oy = cam.fromOy + (cam.toOy - cam.fromOy) * e;
+    if (t >= 1) state.mm.cam = null;
+  }
+
+  function fitMindmap(animate = true) {
+    const canvas = $("mindmap");
+    if (!canvas) return;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const sim = state.mm.sim;
+    const nodes = Object.values(sim);
+    if (!nodes.length) {
+      animateCamera(0.72, 0, 0, animate ? 420 : 0);
+      return;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(p => {
+      const r = (p.hoverR || p.r || 12) + 20;
+      minX = Math.min(minX, p.x - r);
+      maxX = Math.max(maxX, p.x + r);
+      minY = Math.min(minY, p.y - r);
+      maxY = Math.max(maxY, p.y + r);
+    });
+    if (!isFinite(minX)) {
+      animateCamera(0.72, 0, 0, animate ? 420 : 0);
+      return;
+    }
+    const gw = Math.max(40, maxX - minX);
+    const gh = Math.max(40, maxY - minY);
+    const padX = 80, padY = 100;
+    const availW = Math.max(80, w - padX);
+    const availH = Math.max(80, h - padY);
+    const k = Math.max(0.2, Math.min(1.6, Math.min(availW / gw, availH / gh) * 0.9));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    // Camera: screen = center + ox + graph*scale  →  ox = -cx*k, oy = -cy*k
+    const toOx = -cx * k;
+    const toOy = -cy * k;
+    if (animate) animateCamera(k, toOx, toOy, 500);
+    else {
+      state.mm.scale = k;
+      state.mm.ox = toOx;
+      state.mm.oy = toOy;
+      paintMindmap();
+    }
+  }
+
+  function resizeMindmap() {
+    const canvas = $("mindmap");
+    const wrap = $("mindmap-wrap");
+    if (!canvas || !wrap) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = wrap.clientWidth * dpr;
+    canvas.height = wrap.clientHeight * dpr;
+    canvas.style.width = wrap.clientWidth + "px";
+    canvas.style.height = wrap.clientHeight + "px";
+  }
+
+  function neighborSet(id) {
+    const set = new Set([id]);
+    for (const e of state.mm.edges || []) {
+      if (e.from === id) set.add(e.to);
+      if (e.to === id) set.add(e.from);
+    }
+    return set;
+  }
+
+  function mmTruncateLabel(text, max = 22) {
+    const s = String(text || "");
+    return s.length > max ? s.slice(0, max - 1) + "…" : s;
+  }
+
+  function mmLabelAlpha(n, opts) {
+    const { dim, hot, selected, neighbor, scale } = opts;
+    if (dim) return 0;
+    const mode = state.mm.cfg.labelMode || "auto";
+    if (mode === "all") return 0.92;
+    if (mode === "hover") return (hot || selected || neighbor) ? 0.92 : 0;
+    // auto LOD: topics/projects always (faded at low zoom); entries on zoom-in / hot / selected / neighbor
+    const isHub = n.kind === "topic" || n.kind === "project";
+    if (hot || selected || neighbor) return 0.95;
+    if (n.kind === "entry") {
+      if (scale < 0.8) return 0;
+      return Math.min(0.92, (scale - 0.8) / 0.5 * 0.92);
+    }
+    if (isHub) {
+      if (scale < 0.45) return Math.max(0.35, scale / 0.45 * 0.7);
+      return 0.9;
+    }
+    if (scale < 0.65) return Math.max(0, (scale - 0.35) / 0.3 * 0.75);
+    return 0.85;
+  }
+
+  function strokeEdgePath(ctx, a, b, curved) {
+    ctx.beginPath();
+    if (!curved) {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      return;
+    }
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const bend = Math.min(28, dist * 0.12);
+    const cx = mx - (dy / dist) * bend;
+    const cy = my + (dx / dist) * bend;
+    ctx.moveTo(a.x, a.y);
+    ctx.quadraticCurveTo(cx, cy, b.x, b.y);
+  }
+
+  function edgeLabelPoint(a, b, curved) {
+    if (!curved) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 3 };
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const bend = Math.min(28, dist * 0.12);
+    // Point near quadratic control (t≈0.5)
+    const cx = mx - (dy / dist) * bend;
+    const cy = my + (dx / dist) * bend;
+    return {
+      x: 0.25 * a.x + 0.5 * cx + 0.25 * b.x,
+      y: 0.25 * a.y + 0.5 * cy + 0.25 * b.y - 2,
+    };
+  }
+
+  function paintNode(ctx, p, n, opts) {
+    const { dim, hot, selected, neighbor, scale, labelFill, labelStroke } = opts;
+    const r = p.r;
+    const color = mmKindColor(n.kind);
+    const x = p.x, y = p.y;
+    const cfg = state.mm.cfg;
+
+    ctx.save();
+    ctx.globalAlpha = dim ? 0.14 : 1;
+
+    // Glow only for hover/selected (or when user enables ambient glow)
+    if (!dim && (hot || selected || cfg.nodeGlow)) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + Math.max(3, r / 2.4), 0, Math.PI * 2);
+      ctx.fillStyle = color + (hot || selected ? "55" : "22");
+      ctx.fill();
+    }
+
+    // Thin halo for topics / pinned / selected
+    if (!dim && (n.kind === "topic" || n.pinned || selected)) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 3.5, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = selected ? 0.5 : 0.28;
+      ctx.lineWidth = 1.35 / Math.max(scale, 0.5);
+      ctx.stroke();
+      ctx.globalAlpha = dim ? 0.14 : 1;
+    }
+
+    const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.08, x, y, r);
+    g.addColorStop(0, mmLighten(color, 34));
+    g.addColorStop(0.55, color);
+    g.addColorStop(1, mmDarken(color, 42));
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 1 / Math.max(scale, 0.5);
+    ctx.stroke();
+
+    if (n.pinned && !dim) {
+      ctx.beginPath();
+      ctx.arc(x + r * 0.55, y - r * 0.55, Math.max(2, r * 0.22), 0, Math.PI * 2);
+      ctx.fillStyle = "#F3E4E7";
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    if (hot || selected) {
+      ctx.beginPath();
+      ctx.arc(x, y, r + 2.5, 0, Math.PI * 2);
+      ctx.strokeStyle = mmLighten(color, 20);
+      ctx.lineWidth = 2 / Math.max(scale, 0.5);
+      ctx.globalAlpha = dim ? 0.2 : 0.95;
+      ctx.stroke();
+    }
+
+    const labelA = mmLabelAlpha(n, { dim, hot, selected, neighbor, scale });
+    if (labelA > 0.02) {
+      const text = mmTruncateLabel(n.label || n.id, 22);
+      const fontSize = n.kind === "entry" ? 9.5 : (n.kind === "topic" ? 11.5 : 10.5);
+      ctx.font = `500 ${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      const ly = y + r + 5;
+      ctx.globalAlpha = labelA * 0.9;
+      ctx.lineWidth = 3 / Math.max(scale, 0.5);
+      ctx.strokeStyle = labelStroke;
+      ctx.lineJoin = "round";
+      ctx.strokeText(text, x, ly);
+      ctx.fillStyle = labelFill;
+      ctx.globalAlpha = labelA;
+      ctx.fillText(text, x, ly);
+    }
+
+    ctx.restore();
+  }
+
+  function updateMmLegend(nodeCount, edgeCount) {
+    const legend = $("mm-legend");
+    const kindsEl = $("mm-legend-kinds");
+    const countsEl = $("mm-counts");
+    if (!legend || !kindsEl || !countsEl) return;
+    const show = state.mm.cfg.showLegend !== false;
+    legend.classList.toggle("hidden", !show);
+    if (!kindsEl.dataset.ready) {
+      kindsEl.innerHTML = MM_KIND_ORDER.map(k =>
+        `<span class="mm-legend-item"><span class="mm-dot" style="background:${mmKindColor(k)}"></span>${k}</span>`
+      ).join("");
+      kindsEl.dataset.ready = "1";
+    }
+    countsEl.textContent = `${nodeCount} nodes · ${edgeCount} edges`;
+  }
+
+  function paintMindmap() {
+    const canvas = $("mindmap");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const { scale, ox, oy } = state.mm;
+    const cx = w / 2 + ox, cy = h / 2 + oy;
+    const sim = state.mm.sim;
+    const edges = state.mm.edges || [];
+    const hoverId = state.mm.hoverId;
+    const selId = state.selectedNode;
+    const emphasisId = hoverId || selId;
+    const neigh = emphasisId ? neighborSet(emphasisId) : null;
+    const cfg = state.mm.cfg;
+    const curved = !!cfg.curvedEdges;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+
+    const css = getComputedStyle(document.documentElement);
+    const edgeStrong = css.getPropertyValue("--mm-edge-strong").trim() || "rgba(225,29,72,0.7)";
+    const edge = css.getPropertyValue("--mm-edge").trim() || "rgba(180,90,105,0.45)";
+    const edgeGlow = css.getPropertyValue("--mm-edge-glow").trim() || "rgba(196,30,58,0.28)";
+    const labelFill = css.getPropertyValue("--mm-label").trim() || css.getPropertyValue("--ink").trim();
+    const labelStroke = css.getPropertyValue("--mm-label-stroke").trim() || "rgba(0,0,0,0.55)";
+
+    edges.forEach(e => {
+      const a = sim[e.from], b = sim[e.to];
+      if (!a || !b) return;
+      const connected = neigh && (e.from === emphasisId || e.to === emphasisId);
+      const continues = e.rel === "continues";
+      strokeEdgePath(ctx, a, b, curved);
+      if (connected) {
+        ctx.strokeStyle = edgeStrong;
+        ctx.lineWidth = continues ? 1.8 : 1.35;
+        ctx.globalAlpha = 0.92;
+      } else if (neigh) {
+        ctx.strokeStyle = edge;
+        ctx.lineWidth = continues ? 0.85 : 0.6;
+        ctx.globalAlpha = 0.05;
+      } else {
+        ctx.strokeStyle = continues ? edgeStrong : edge;
+        ctx.lineWidth = continues ? 0.95 : 0.65;
+        ctx.globalAlpha = continues ? 0.55 : 0.32;
+      }
+      ctx.stroke();
+
+      if (connected) {
+        strokeEdgePath(ctx, a, b, curved);
+        ctx.strokeStyle = edgeGlow;
+        ctx.lineWidth = continues ? 3.5 : 2.6;
+        ctx.globalAlpha = 0.28;
+        ctx.stroke();
+      }
+
+      // Rel labels only when an endpoint is hovered/selected
+      if (cfg.edgeRelLabels && connected && e.rel) {
+        const pt = edgeLabelPoint(a, b, curved);
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = labelFill;
+        ctx.font = `500 8px ui-monospace, "SF Mono", Menlo, monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(e.rel).toUpperCase(), pt.x, pt.y);
+      }
+      ctx.globalAlpha = 1;
+    });
+
+    const entries = Object.entries(sim);
+    const drawOrder = entries.slice().sort(([idA], [idB]) => {
+      const score = id => (id === selId ? 3 : 0) + (id === hoverId ? 2 : 0) + (neigh && neigh.has(id) ? 1 : 0);
+      return score(idA) - score(idB);
+    });
+    drawOrder.forEach(([id, p]) => {
+      const n = p.node;
+      if (!n) return;
+      const isNeigh = !!(neigh && neigh.has(id) && id !== emphasisId);
+      paintNode(ctx, p, n, {
+        dim: neigh && !neigh.has(id),
+        hot: hoverId === id,
+        selected: selId === id,
+        neighbor: isNeigh,
+        scale,
+        labelFill,
+        labelStroke,
+      });
+    });
+    ctx.restore();
+  }
+
+  function drawMindmap(opts = {}) {
+    const { nodes, edges } = visibleGraph();
+    syncSim(nodes, edges);
+    if (opts.reheat !== false) reheatSim(opts.alpha || 0.75);
+    else { paintMindmap(); kickMindmap(); }
+  }
+
+  function screenToGraph(mx, my) {
+    const canvas = $("mindmap");
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const { scale, ox, oy } = state.mm;
+    return {
+      x: (mx - (w / 2 + ox)) / scale,
+      y: (my - (h / 2 + oy)) / scale,
+    };
+  }
+
+  function hitTest(mx, my) {
+    const { x, y } = screenToGraph(mx, my);
+    let best = null, bestD = 1e9;
+    for (const [id, p] of Object.entries(state.mm.sim)) {
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < p.r + 8 && d < bestD) { best = id; bestD = d; }
+    }
+    return best;
+  }
+
+  function closeNodeMoreActions() {
+    const toggle = $("node-more-toggle");
+    const actions = $("node-more-actions");
+    if (!toggle || !actions || toggle.getAttribute("aria-expanded") !== "true") return false;
+    toggle.setAttribute("aria-expanded", "false");
+    actions.classList.add("hidden");
+    return true;
+  }
+
+  function showNodeSheet(nodeId) {
+    const node = (state.graph?.nodes || []).find(n => n.id === nodeId);
+    if (!node) return;
+    state.selectedNode = nodeId;
+    const titleEl = detailTitle();
+    const bodyEl = detailBody();
+    if (titleEl) titleEl.textContent = node.kind;
+    const byId = Object.fromEntries((state.graph.nodes || []).map(n => [n.id, n]));
+    const backlinks = (state.graph.edges || []).filter(e => e.to === nodeId || e.from === nodeId);
+    const nbrRows = backlinks.map(e => {
+      const otherId = e.from === nodeId ? e.to : e.from;
+      const other = byId[otherId];
+      const label = other?.label || otherId;
+      const kind = other?.kind || "concept";
+      return `<li data-nbr="${escapeHtml(otherId)}" title="${escapeHtml(otherId)}">
+        <span class="mm-dot" style="background:${mmKindColor(kind)}"></span>
+        <span>${escapeHtml(label)}</span>
+        <span class="mm-nbr-rel">${escapeHtml(e.rel || "link")}</span>
+      </li>`;
+    }).join("");
+    const isConcept = (node.kind === "concept" || node.kind === "project")
+      || String(node.id).startsWith("concept:") || String(node.id).startsWith("project:");
+    const pinOp = node.pinned ? "unpin" : "pin";
+    const visibilityOp = node.hidden ? "unhide" : "hide";
+    const docLine = node.doc
+      ? `<p style="font-size:0.8rem">doc: <code>${escapeHtml(node.doc)}</code></p>`
+      : "";
+    if (bodyEl) bodyEl.innerHTML = `
+      <p class="serif" style="color:var(--ink);font-size:1.1rem">${escapeHtml(node.label || node.id)}</p>
+      <p>${escapeHtml(node.id)}</p>
+      ${docLine}
+      ${node.annotation ? `<p><em>${escapeHtml(node.annotation)}</em></p>` : ""}
+      <div class="node-sheet">
+        <div class="node-primary-actions">
+          <button class="btn primary node-ask" data-op="ask_about">Ask about this node</button>
+          <button class="btn" data-op="${pinOp}">${node.pinned ? "Unpin" : "Pin"}</button>
+          <button class="btn" data-op="${visibilityOp}">${node.hidden ? "Unhide" : "Hide"}</button>
+          <button class="btn node-more-toggle" id="node-more-toggle" type="button"
+            aria-controls="node-more-actions" aria-expanded="false">More actions</button>
+        </div>
+        <div class="node-more-actions hidden" id="node-more-actions">
+          <button class="btn" data-op="rename">Rename</button>
+          <button class="btn" data-op="annotate">Annotate</button>
+          ${node.doc ? `<button class="btn" data-op="edit_doc">Edit note</button>` : ""}
+          <button class="btn" data-op="link">Link to…</button>
+          ${backlinks.length ? `<button class="btn" data-op="unlink">Unlink…</button>` : ""}
+          <button class="btn" data-op="merge">Merge into…</button>
+          <button class="btn" data-op="create_concept">+ Concept</button>
+          ${isConcept ? `<button class="btn danger" data-op="delete_concept">Delete concept</button>` : ""}
+        </div>
+      </div>
+      <div id="doc-editor-slot"></div>
+      <h4 class="serif" style="margin-top:1rem">Links</h4>
+      <ul class="mm-nbr">${nbrRows || "<li style='cursor:default;opacity:0.6'>None</li>"}</ul>
+    `;
+    if (!bodyEl) return;
+    const moreToggle = bodyEl.querySelector("#node-more-toggle");
+    const moreActions = bodyEl.querySelector("#node-more-actions");
+    if (moreToggle && moreActions) {
+      moreToggle.onclick = (e) => {
+        e.stopPropagation();
+        const expanded = moreToggle.getAttribute("aria-expanded") !== "true";
+        moreToggle.setAttribute("aria-expanded", String(expanded));
+        moreActions.classList.toggle("hidden", !expanded);
+      };
+    }
+    bodyEl.querySelectorAll("[data-op]").forEach(btn => {
+      btn.onclick = () => {
+        if (moreToggle && moreActions) {
+          moreToggle.setAttribute("aria-expanded", "false");
+          moreActions.classList.add("hidden");
+        }
+        curationOp(btn.dataset.op, node);
+      };
+    });
+    bodyEl.querySelectorAll("[data-nbr]").forEach(row => {
+      row.onclick = () => {
+        const id = row.dataset.nbr;
+        if (!id) return;
+        if (state.mm.focus) {
+          state.mm.focus = null;
+          drawMindmap({ alpha: 0.4, reheat: false });
+        }
+        showNodeSheet(id);
+        flyToNode(id);
+      };
+    });
+    paintMindmap();
+    kickMindmap();
+  }
+
+  async function openDocEditor(docPath) {
+    const slot = $("doc-editor-slot");
+    if (!slot) return;
+    const text = await readVaultText(docPath);
+    if (text == null) {
+      slot.innerHTML = `<p style="color:var(--danger)">Could not read ${escapeHtml(docPath)}</p>`;
+      return;
+    }
+    slot.innerHTML = `
+      <h4 class="serif" style="margin-top:0.75rem">Edit ${escapeHtml(docPath)}</h4>
+      <textarea class="md-editor" id="doc-editor"></textarea>
+      <div class="row" style="margin-top:0.4rem;justify-content:flex-end">
+        <button class="btn primary" id="doc-save" type="button">Save</button>
+      </div>
+    `;
+    $("doc-editor").value = text;
+    $("doc-save").onclick = async () => {
+      try {
+        await writeVaultText(docPath, $("doc-editor").value);
+        status(`Saved ${docPath}`);
+      } catch (e) {
+        alert("Save failed: " + e.message);
+      }
+    };
+  }
+
+  async function showNotePreview(relPath) {
+    const titleEl = detailTitle();
+    const bodyEl = detailBody();
+    if (titleEl) titleEl.textContent = "Note";
+    const text = await readVaultText(relPath);
+    if (bodyEl) {
+      bodyEl.innerHTML = text == null
+        ? `<p>Could not open <code>${escapeHtml(relPath)}</code></p>`
+        : `<p class="serif" style="color:var(--ink)">${escapeHtml(relPath)}</p>
+           <pre style="white-space:pre-wrap;font-size:0.8rem;color:var(--ink)">${escapeHtml(text.slice(0, 8000))}</pre>
+           <button class="btn" id="preview-edit" type="button">Edit</button>
+           <div id="doc-editor-slot"></div>`;
+      const editBtn = $("preview-edit");
+      if (editBtn) editBtn.onclick = () => openDocEditor(relPath);
+    }
+  }
+
+  function activateCitation(c) {
+    const kind = c.kind || "";
+    const id = c.id || "";
+    if (kind === "entry") {
+      const nid = id.startsWith("entry:") ? id : `entry:${id}`;
+      const node = (state.graph?.nodes || []).find(n => n.id === nid);
+      if (node) {
+        focusNode(nid);
+        return;
+      }
+      // Archived / missing from live graph — entry preview
+      const entry = state.entries.find(e => e.id === id || e.id === id.replace(/^entry:/, ""));
+      if (entry) {
+        setView("timeline");
+        selectEntry(entry.id);
+        return;
+      }
+      showNotePreview(`entries (missing ${id})`);
+      return;
+    }
+    if (kind === "kb") {
+      const path = c.path || id;
+      const node = (state.graph?.nodes || []).find(n => n.doc === path || n.doc === id);
+      if (node) {
+        focusNode(node.id);
+        return;
+      }
+      showNotePreview(path.startsWith("kb/") ? path : id);
+      return;
+    }
+    if (kind === "note") {
+      const path = c.path || (id.startsWith("note:") ? id.slice(5) : id);
+      showNotePreview(path);
+      return;
+    }
+    // Fallback
+    if (id) showNotePreview(String(c.path || id));
+  }
+
+  async function curationOp(op, node) {
+    if (op === "ask_about") {
+      const q = `Tell me about ${node.label || node.id}`;
+      $("recall-input").value = q;
+      if (state.chatCollapsed) {
+        state.chatCollapsed = false;
+        syncAssistantPanels();
+      }
+      recallAsk();
+      return;
+    }
+    if (op === "edit_doc") {
+      if (node.doc) await openDocEditor(node.doc);
+      return;
+    }
+    const base = { op, ts: new Date().toISOString(), device: "pc" };
+    let payload = { ...base };
+    if (["pin","unpin","hide","unhide"].includes(op)) payload.node = node.id;
+    if (op === "rename") {
+      const label = prompt("New label", node.label || "");
+      if (!label) return;
+      payload.node = node.id; payload.label = label;
+    }
+    if (op === "annotate") {
+      const text = prompt("Annotation", node.annotation || "");
+      if (text == null) return;
+      payload.node = node.id; payload.text = text;
+    }
+    if (op === "merge") {
+      const into = prompt("Merge into node id (e.g. topic:fitness)", "");
+      if (!into) return;
+      payload = { ...base, op: "merge", from: node.id, into: into.trim() };
+    }
+    if (op === "link") {
+      const to = prompt("Link to node id", "");
+      if (!to) return;
+      payload = { ...base, op: "link", from: node.id, to: to.trim(), rel: "manual" };
+    }
+    if (op === "unlink") {
+      const to = prompt("Unlink from node id", "");
+      if (!to) return;
+      payload = { ...base, op: "unlink", from: node.id, to: to.trim() };
+    }
+    if (op === "create_concept") {
+      const label = prompt("Concept label");
+      if (!label) return;
+      const id = "concept:" + label.toLowerCase().replace(/\s+/g, "-");
+      payload = { ...base, op: "create_concept", id, label };
+    }
+    if (op === "delete_concept") {
+      if (!confirm(`Delete ${node.id}? This hard-removes the concept and its edges.`)) return;
+      payload = { ...base, op: "delete_concept", node: node.id };
+    }
+    try {
+      const opsDir = await getDir(state.root, ["curation", "ops"], true);
+      await appendJsonl(opsDir, "pc.jsonl", payload);
+      // Optimistic overlay
+      if (!state.graph) state.graph = { version: 1, generated: new Date().toISOString(), nodes: [], edges: [] };
+      if (op === "pin") node.pinned = true;
+      if (op === "unpin") node.pinned = false;
+      if (op === "hide") node.hidden = true;
+      if (op === "unhide") node.hidden = false;
+      if (op === "rename") node.label = payload.label;
+      if (op === "annotate") node.annotation = payload.text;
+      if (op === "create_concept") {
+        const kind = String(payload.id || "").startsWith("project:") ? "project" : "concept";
+        state.graph.nodes.push({ id: payload.id, kind, label: payload.label });
+      }
+      if (op === "delete_concept") {
+        state.graph.nodes = state.graph.nodes.filter(n => n.id !== node.id);
+        state.graph.edges = (state.graph.edges || []).filter(
+          e => e.from !== node.id && e.to !== node.id
+        );
+        state.selectedNode = null;
+        drawMindmap({ alpha: 0.9 });
+        const bodyEl = detailBody();
+        if (bodyEl) bodyEl.innerHTML = "<p>Concept deleted.</p>";
+        status("Wrote delete_concept → pc.jsonl");
+        return;
+      }
+      if (op === "merge") {
+        const into = (state.graph.nodes || []).find(n => n.id === payload.into);
+        if (into) {
+          state.graph.nodes = state.graph.nodes.filter(n => n.id !== node.id);
+          state.graph.edges = (state.graph.edges || []).map(e => ({
+            ...e,
+            from: e.from === node.id ? payload.into : e.from,
+            to: e.to === node.id ? payload.into : e.to,
+          }));
+        }
+      }
+      if (op === "link") {
+        state.graph.edges = state.graph.edges || [];
+        state.graph.edges.push({ from: payload.from, to: payload.to, rel: "manual", score: 1 });
+      }
+      if (op === "unlink") {
+        state.graph.edges = (state.graph.edges || []).filter(
+          e => !(e.from === payload.from && e.to === payload.to)
+        );
+      }
+      status("Wrote curation op → pc.jsonl");
+      drawMindmap({ alpha: 0.9 });
+      if (op === "merge") {
+        showNodeSheet(payload.into);
+      } else if (op === "create_concept") {
+        showNodeSheet(payload.id);
+      } else {
+        showNodeSheet(node.id);
+      }
+    } catch (e) {
+      alert("Failed to write curation op: " + e.message);
+    }
+  }
+
+  // Mindmap interactions
+  (() => {
+    const canvas = $("mindmap");
+    let panDrag = false, nodeDrag = null, lastX = 0, lastY = 0;
+    let downX = 0, downY = 0, moved = false;
+    let emptyPanClick = false;
+    const CLICK_THRESH = 4;
+
+    canvas.addEventListener("mousedown", e => {
+      const hit = hitTest(e.offsetX, e.offsetY);
+      downX = e.clientX; downY = e.clientY; moved = false;
+      lastX = e.clientX; lastY = e.clientY;
+      emptyPanClick = false;
+      if (hit) {
+        const p = state.mm.sim[hit];
+        if (!p) return;
+        nodeDrag = hit;
+        state.mm.dragNode = hit;
+        p.fx = p.x; p.fy = p.y;
+        if (!state.mm.cfg.freeze) reheatSim(0.55);
+        canvas.style.cursor = "grabbing";
+        return;
+      }
+      panDrag = true;
+      emptyPanClick = true;
+      canvas.style.cursor = "grabbing";
+    });
+
+    window.addEventListener("mouseup", e => {
+      if (nodeDrag) {
+        const p = state.mm.sim[nodeDrag];
+        const wasClick = !moved;
+        const id = nodeDrag;
+        if (p) { p.fx = null; p.fy = null; }
+        state.mm.dragNode = null;
+        nodeDrag = null;
+        if (!state.mm.cfg.freeze) reheatSim(0.45);
+        if (wasClick) {
+          // Single click: select/inspect without entering focus mode
+          showNodeSheet(id);
+          flyToNode(id, 1.05);
+        }
+      } else if (panDrag && emptyPanClick && !moved) {
+        // Empty canvas click clears focus/selection
+        if (state.mm.focus || state.selectedNode) clearMmFocus(true);
+      }
+      panDrag = false;
+      emptyPanClick = false;
+      canvas.style.cursor = state.mm.hoverId ? "pointer" : "grab";
+    });
+
+    canvas.addEventListener("dblclick", e => {
+      e.preventDefault();
+      const hit = hitTest(e.offsetX, e.offsetY);
+      if (hit) focusNode(hit);
+    });
+
+    window.addEventListener("mousemove", e => {
+      if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_THRESH) moved = true;
+
+      if (nodeDrag) {
+        const rect = canvas.getBoundingClientRect();
+        const g = screenToGraph(e.clientX - rect.left, e.clientY - rect.top);
+        const p = state.mm.sim[nodeDrag];
+        if (p) { p.fx = g.x; p.fy = g.y; p.x = g.x; p.y = g.y; }
+        if (!state.mm.cfg.freeze) reheatSim(0.35);
+        else paintMindmap();
+        return;
+      }
+
+      if (panDrag) {
+        state.mm.ox += e.clientX - lastX;
+        state.mm.oy += e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        paintMindmap();
+        return;
+      }
+
+      // Hover hit-test (only when over canvas)
+      const rect = canvas.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+        if (state.mm.hoverId) {
+          state.mm.hoverId = null;
+          kickMindmap();
+          canvas.style.cursor = "grab";
+        }
+        return;
+      }
+      const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+      if (hit !== state.mm.hoverId) {
+        state.mm.hoverId = hit;
+        canvas.style.cursor = hit ? "pointer" : "grab";
+        kickMindmap();
+      }
+    });
+
+    canvas.addEventListener("wheel", e => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      const oldScale = state.mm.scale;
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      const newScale = Math.min(MM_SCALE_MAX, Math.max(MM_SCALE_MIN, oldScale * factor));
+      // Zoom toward cursor: keep graph point under cursor fixed
+      const gx = (mx - (w / 2 + state.mm.ox)) / oldScale;
+      const gy = (my - (h / 2 + state.mm.oy)) / oldScale;
+      state.mm.scale = newScale;
+      state.mm.ox = mx - w / 2 - gx * newScale;
+      state.mm.oy = my - h / 2 - gy * newScale;
+      paintMindmap();
+    }, { passive: false });
+  })();
+
+  // —— Quick entry ——
+  function pad(n, w=2){ return String(n).padStart(w,"0"); }
+  function nextPcId() {
+    const d = new Date();
+    const base = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-pc`;
+    let id = base, n = 2;
+    while (state.entries.some(e => e.id === id)) { id = `${base}_${n++}`; }
+    return id;
+  }
+
+  async function saveQuickEntry() {
+    const text = $("qe-text").value.trim();
+    if (!text) return;
+    const id = nextPcId();
+    const now = new Date();
+    const off = -now.getTimezoneOffset();
+    const sign = off >= 0 ? "+" : "-";
+    const oh = pad(Math.floor(Math.abs(off)/60)), om = pad(Math.abs(off)%60);
+    const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${sign}${oh}:${om}`;
+    const tags = $("qe-tags").value.split(",").map(s => s.trim()).filter(Boolean);
+    const moodVal = $("qe-mood").value;
+    const entry = {
+      version: 1,
+      id,
+      ts,
+      type: $("qe-type").value,
+      text,
+      tags,
+      images: [],
+      processed: false,
+    };
+    if (moodVal) entry.mood = Number(moodVal);
+    const yyyy = id.slice(0,4), mm = id.slice(5,7);
+    const dir = await getDir(state.root, ["entries", yyyy, mm], true);
+    await writeJsonAtomic(dir, `${id}.json`, entry);
+    state.entries.unshift(entry);
+    closeOverlays();
+    renderTags(); renderTimeline();
+    selectEntry(id);
+    status(`Saved ${id}`);
+  }
+
+  // —— Search ——
+  function openSearch() {
+    $("search-overlay").classList.add("open");
+    $("search-input").value = "";
+    $("search-input").focus();
+    $("search-hits").innerHTML = "";
+  }
+  function runSearch(q) {
+    q = q.toLowerCase().trim();
+    const hits = [];
+    state.entries.forEach(e => {
+      const blob = `${e.id} ${e.type} ${(e.tags||[]).join(" ")} ${e.text||""}`.toLowerCase();
+      if (!q || blob.includes(q)) hits.push({ kind: "entry", id: e.id, label: (e.text||"").slice(0,80) || e.id });
+    });
+    state.notes.forEach(n => {
+      if (!q || n.text.toLowerCase().includes(q) || n.path.toLowerCase().includes(q))
+        hits.push({ kind: "note", id: n.path, label: n.path });
+    });
+    const ul = $("search-hits");
+    ul.innerHTML = "";
+    hits.slice(0, 40).forEach((h, i) => {
+      const li = document.createElement("li");
+      if (i === state.searchHit) li.classList.add("active");
+      li.innerHTML = `<strong>${h.kind}</strong> ${escapeHtml(h.id)}<div style="color:var(--muted);font-size:0.85rem">${escapeHtml(h.label)}</div>`;
+      li.onclick = () => activateHit(h);
+      ul.appendChild(li);
+    });
+    state._hits = hits.slice(0, 40);
+  }
+  function activateHit(h) {
+    closeOverlays();
+    if (h.kind === "entry") { setView("timeline"); selectEntry(h.id); }
+    else { setView("notes"); }
+  }
+
+  function closeOverlays() {
+    $("search-overlay").classList.remove("open");
+    $("entry-overlay").classList.remove("open");
+  }
+
+  // —— Brain assistant (Recall + Resume) ——
+  function syncAssistantPanels() {
+    const chat = $("brain-chat");
+    const chatBody = $("brain-chat-body");
+    const chatToggle = $("brain-chat-toggle");
+    const resume = $("brain-resume");
+    const resumeToggle = $("brain-resume-toggle");
+    if (chat) chat.classList.toggle("collapsed", state.chatCollapsed);
+    if (chatBody) chatBody.hidden = state.chatCollapsed;
+    if (chatToggle) {
+      chatToggle.setAttribute("aria-expanded", String(!state.chatCollapsed));
+      chatToggle.title = state.chatCollapsed ? "Expand chat" : "Collapse chat";
+    }
+    if (resume) {
+      resume.hidden = !state.resumeExpanded;
+      resume.classList.toggle("hidden", !state.resumeExpanded);
+    }
+    if (resumeToggle) {
+      resumeToggle.setAttribute("aria-expanded", String(state.resumeExpanded));
+      resumeToggle.title = state.resumeExpanded ? "Collapse resume tools" : "Expand resume tools";
+    }
+  }
+
+  async function recallAsk() {
+    const msg = $("recall-input").value.trim();
+    if (!msg) return;
+    const log = $("recall-log");
+    log.innerHTML += `<div class="msg user">${escapeHtml(msg)}</div>`;
+    $("recall-input").value = "";
+    state.chatHistory.push({ role: "user", content: msg });
+    try {
+      if (state.root) await resolveServe(state.root);
+      const r = await fetch(`${SERVE}/recall`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          history: state.chatHistory.slice(-12),
+          scope: state.chatScope || "all",
+        }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      const answer = data.answer || "";
+      state.chatHistory.push({ role: "assistant", content: answer });
+      const cites = (data.citations || []).map((c, i) =>
+        `<button type="button" class="cite-chip" data-cite="${i}">${escapeHtml(c.kind || "")}:${escapeHtml(String(c.id || "").slice(0, 40))}</button>`
+      ).join("");
+      log.innerHTML += `<div class="msg">${escapeHtml(answer)}${cites ? `<div style="margin-top:0.4rem">${cites}</div>` : ""}${data.degraded ? "<div style=\"font-size:0.75rem;color:var(--danger)\">Degraded (Ollama offline)</div>" : ""}</div>`;
+      log.querySelectorAll(".cite-chip").forEach(btn => {
+        btn.onclick = () => {
+          const c = (data.citations || [])[Number(btn.dataset.cite)];
+          if (c) activateCitation(c);
+        };
+      });
+    } catch (e) {
+      log.innerHTML += `<div class="msg">Recall server unavailable (${escapeHtml(e.message)}). Start with <code>chronicle serve</code>.</div>`;
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function resumeAsk() {
+    const role = $("resume-role").value.trim();
+    if (!role) return;
+    if (state.chatCollapsed) {
+      state.chatCollapsed = false;
+      syncAssistantPanels();
+    }
+    const log = $("recall-log");
+    log.innerHTML += `<div class="msg user">Resume: ${escapeHtml(role)}</div>`;
+    try {
+      if (state.root) await resolveServe(state.root);
+      const r = await fetch(`${SERVE}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      if (!data.ok) {
+        log.innerHTML += `<div class="msg">${escapeHtml(data.error || "Resume failed")}</div>`;
+      } else {
+        const bullets = (data.bullets || []).map(b => `• ${escapeHtml(b)}`).join("<br/>");
+        log.innerHTML += `<div class="msg">${bullets || "(no bullets)"}${data.notes ? `<div style="margin-top:0.4rem;font-size:0.8rem;color:var(--muted)">${escapeHtml(data.notes)}</div>` : ""}</div>`;
+      }
+    } catch (e) {
+      log.innerHTML += `<div class="msg">Resume unavailable (${escapeHtml(e.message)})</div>`;
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function enrichKb() {
+    const btn = $("enrich-kb");
+    const statusEl = $("enrich-kb-status");
+    const setStatus = (text, cls) => {
+      if (!statusEl) return;
+      statusEl.className = "brain-enrich-status" + (cls ? " " + cls : "");
+      statusEl.textContent = text;
+      statusEl.title = text;
+    };
+    if (btn) btn.disabled = true;
+    setStatus("Enriching (may take a while)", "busy");
+    try {
+      if (state.root) await resolveServe(state.root);
+      // No client-side timeout: enrichment runs an LLM pass per note and can be slow.
+      let r;
+      try {
+        r = await fetch(`${SERVE}/enrich/kb`, { method: "POST" });
+      } catch (_) {
+        throw new Error("serve unreachable — start it with Start Chronicle.command (or chronicle serve)");
+      }
+      if (r.status === 404) {
+        throw new Error("endpoint not found — restart chronicle serve (it predates Enrich KB)");
+      }
+      const t = await r.text();
+      let data = {};
+      try { data = JSON.parse(t); } catch (_) {}
+      if (!r.ok) throw new Error((data && data.detail) || t.slice(0, 160) || ("HTTP " + r.status));
+      if (data.ollama === false) {
+        setStatus("Ollama offline — nothing enriched", "err");
+        return;
+      }
+      const parts = [`Enriched ${data.enriched ?? 0}`, `skipped ${data.skipped ?? 0}`];
+      if (data.failed) parts.push(`failed ${data.failed}`);
+      if (data.index) parts.push(`index +${data.index.upserted ?? 0}`);
+      setStatus(parts.join(", "), "ok");
+    } catch (e) {
+      setStatus("Failed: " + (e.message || e), "err");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function fillSettingsModelSelect(sel, textInput, available, current) {
+    const names = Array.isArray(available) ? available.slice() : [];
+    if (current && !names.includes(current)) names.unshift(current);
+    const offline = !names.length;
+    sel.classList.toggle("hidden", offline);
+    textInput.classList.toggle("hidden", !offline);
+    if (offline) {
+      textInput.value = current || "";
+      sel.innerHTML = "";
+      return;
+    }
+    sel.innerHTML = "";
+    names.forEach(n => {
+      const o = document.createElement("option");
+      o.value = n;
+      o.textContent = n;
+      if (n === current) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  function settingsModelValue(selId, textId) {
+    const sel = $(selId);
+    const text = $(textId);
+    if (text && !text.classList.contains("hidden")) return (text.value || "").trim();
+    return (sel && sel.value || "").trim();
+  }
+
+  async function loadAppSettings() {
+    const status = $("settings-ollama-status");
+    const saveStatus = $("settings-save-status");
+    if (saveStatus) { saveStatus.textContent = ""; saveStatus.className = "app-settings-status"; }
+    if (status) { status.textContent = "Loading…"; status.className = "app-settings-status"; }
+    try {
+      if (state.root) await resolveServe(state.root);
+      const r = await fetch(`${SERVE}/models`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      const available = Array.isArray(j.available) ? j.available : [];
+      fillSettingsModelSelect($("settings-llm"), $("settings-llm-text"), available, j.llm || "");
+      fillSettingsModelSelect($("settings-embed"), $("settings-embed-text"), available, j.embed || "");
+      fillSettingsModelSelect($("settings-vision"), $("settings-vision-text"), available, j.vision || "");
+      $("settings-base-url").value = j.base_url || "http://localhost:11434";
+      $("settings-num-ctx").value = j.num_ctx != null ? String(j.num_ctx) : "4096";
+      $("settings-temperature").value = (j.temperature == null || j.temperature === "") ? "" : String(j.temperature);
+      const ok = !!j.ollama_ok;
+      const n = available.length;
+      if (status) {
+        status.className = "app-settings-status" + (ok ? (n ? " ok" : " warn") : " warn");
+        status.textContent = ok
+          ? (n ? `Ollama reachable · ${n} model${n === 1 ? "" : "s"}` : "Ollama reachable · no tags (edit names as text)")
+          : "Ollama offline — showing configured names as text";
+      }
+    } catch (e) {
+      if (status) {
+        status.className = "app-settings-status err";
+        status.textContent = "Could not load /models — is chronicle serve running?";
+      }
+    }
+  }
+
+  async function saveAppSettings() {
+    const saveStatus = $("settings-save-status");
+    const btn = $("settings-save");
+    if (btn) btn.disabled = true;
+    if (saveStatus) { saveStatus.textContent = "Saving…"; saveStatus.className = "app-settings-status"; }
+    try {
+      if (state.root) await resolveServe(state.root);
+      const tempRaw = ($("settings-temperature").value || "").trim();
+      const body = {
+        llm: settingsModelValue("settings-llm", "settings-llm-text"),
+        embed: settingsModelValue("settings-embed", "settings-embed-text"),
+        vision: settingsModelValue("settings-vision", "settings-vision-text"),
+        base_url: ($("settings-base-url").value || "").trim(),
+        num_ctx: Number($("settings-num-ctx").value) || 4096,
+        temperature: tempRaw === "" ? null : Number(tempRaw),
+      };
+      const r = await fetch(`${SERVE}/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const t = await r.text();
+      let j = {};
+      try { j = JSON.parse(t); } catch (_) {}
+      if (!r.ok) throw new Error((j && j.detail) || t || ("HTTP " + r.status));
+      const available = Array.isArray(j.available) ? j.available : [];
+      fillSettingsModelSelect($("settings-llm"), $("settings-llm-text"), available, j.llm || "");
+      fillSettingsModelSelect($("settings-embed"), $("settings-embed-text"), available, j.embed || "");
+      fillSettingsModelSelect($("settings-vision"), $("settings-vision-text"), available, j.vision || "");
+      $("settings-base-url").value = j.base_url || body.base_url;
+      $("settings-num-ctx").value = j.num_ctx != null ? String(j.num_ctx) : String(body.num_ctx);
+      $("settings-temperature").value = (j.temperature == null || j.temperature === "") ? "" : String(j.temperature);
+      if (saveStatus) {
+        saveStatus.className = "app-settings-status ok";
+        saveStatus.textContent = "Saved";
+      }
+    } catch (e) {
+      if (saveStatus) {
+        saveStatus.className = "app-settings-status err";
+        saveStatus.textContent = String(e.message || e).slice(0, 160);
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function toggleAppSettings(force) {
+    const panel = $("app-settings");
+    const btn = $("btn-settings");
+    if (!panel) return;
+    const open = force != null ? !!force : panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !open);
+    if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) loadAppSettings();
+  }
+
+  async function createKbNote() {
+    const label = prompt("New knowledge note title");
+    if (!label || !state.root) return;
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "note";
+    const doc = `kb/notes/${slug}.md`;
+    const cid = `concept:${slug}`;
+    const body = `# ${label}\n\n`;
+    try {
+      await writeVaultText(doc, body);
+      const opsDir = await getDir(state.root, ["curation", "ops"], true);
+      const ts = new Date().toISOString();
+      await appendJsonl(opsDir, "pc.jsonl", { op: "create_concept", ts, device: "pc", id: cid, label });
+      await appendJsonl(opsDir, "pc.jsonl", { op: "set_doc", ts, device: "pc", node: cid, doc });
+      if (!state.graph) state.graph = { version: 1, generated: ts, nodes: [], edges: [] };
+      state.graph.nodes.push({ id: cid, kind: "concept", label, doc });
+      status(`Created ${doc}`);
+      drawMindmap({ alpha: 0.9 });
+      showNodeSheet(cid);
+      await openDocEditor(doc);
+    } catch (e) {
+      alert("New note failed: " + e.message);
+    }
+  }
+
+  // —— Keys ——
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target && e.target.tagName) || "";
+    const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    if (e.key === "Escape") {
+      if (closeNodeMoreActions()) {
+        $("node-more-toggle")?.focus();
+        return;
+      }
+      const appSettings = $("app-settings");
+      if (appSettings && !appSettings.classList.contains("hidden")) {
+        toggleAppSettings(false);
+        return;
+      }
+      const settings = $("mm-settings");
+      if (settings && !settings.classList.contains("hidden")) {
+        settings.classList.add("hidden");
+        state.mm.settingsOpen = false;
+        return;
+      }
+      if (state.view === "brain" && (state.mm.focus || state.selectedNode)) {
+        clearMmFocus(true);
+        return;
+      }
+      closeOverlays();
+      return;
+    }
+    if (!typing && e.key === "/") { e.preventDefault(); openSearch(); return; }
+    if (!typing && e.key === "n") { e.preventDefault(); $("entry-overlay").classList.add("open"); $("qe-text").focus(); return; }
+    if ($("search-overlay").classList.contains("open")) {
+      if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); state.searchHit = Math.min((state._hits||[]).length-1, state.searchHit+1); runSearch($("search-input").value); }
+      if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); state.searchHit = Math.max(0, state.searchHit-1); runSearch($("search-input").value); }
+      if (e.key === "Enter") { e.preventDefault(); const h = (state._hits||[])[state.searchHit]; if (h) activateHit(h); }
+      return;
+    }
+    if (typing) return;
+    if (state.view === "timeline" && (e.key === "j" || e.key === "k")) {
+      const list = filteredEntries();
+      let idx = list.findIndex(x => x.id === state.selectedId);
+      if (e.key === "j") idx = Math.min(list.length-1, idx+1);
+      else idx = Math.max(0, idx <= 0 ? 0 : idx-1);
+      if (list[idx]) selectEntry(list[idx].id);
+    }
+    if (e.key === "Enter" && state.selectedId) selectEntry(state.selectedId);
+  });
+
+  // —— Theme (light / dark / system; tokens match Android Color.kt) ——
+  const THEME_KEY = "chronicle-theme";
+  const THEME_CYCLE = ["system", "light", "dark"];
+  const THEME_ICONS = { system: "◐", light: "○", dark: "●" };
+  const THEME_LABELS = { system: "System", light: "Light", dark: "Dark" };
+
+  function themePref() {
+    return document.documentElement.dataset.themePref || localStorage.getItem(THEME_KEY) || "dark";
+  }
+  function resolveTheme(pref) {
+    if (pref === "light" || pref === "dark") return pref;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  function applyTheme(pref) {
+    const resolved = resolveTheme(pref);
+    document.documentElement.dataset.theme = resolved;
+    document.documentElement.dataset.themePref = pref;
+    localStorage.setItem(THEME_KEY, pref);
+    const btn = $("btn-theme");
+    if (btn) {
+      btn.textContent = THEME_ICONS[pref] || "◐";
+      btn.title = `Theme: ${THEME_LABELS[pref] || pref} (click to cycle)`;
+      btn.setAttribute("aria-label", `Theme ${THEME_LABELS[pref] || pref}`);
+    }
+    if (state.view === "brain") paintMindmap();
+  }
+  function cycleTheme() {
+    const cur = themePref();
+    const next = THEME_CYCLE[(THEME_CYCLE.indexOf(cur) + 1) % THEME_CYCLE.length];
+    applyTheme(next);
+  }
+  applyTheme(themePref());
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (themePref() === "system") applyTheme("system");
+  });
+
+  $("search-input").addEventListener("input", () => { state.searchHit = 0; runSearch($("search-input").value); });
+  $("btn-theme").onclick = cycleTheme;
+  $("btn-settings").onclick = (e) => {
+    e.stopPropagation();
+    toggleAppSettings();
+  };
+  $("settings-save").onclick = saveAppSettings;
+  $("app-settings").addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", (e) => {
+    const panel = $("app-settings");
+    const btn = $("btn-settings");
+    if (!panel || panel.classList.contains("hidden")) return;
+    if (panel.contains(e.target) || (btn && btn.contains(e.target))) return;
+    toggleAppSettings(false);
+  });
+  document.addEventListener("click", (e) => {
+    const sheet = e.target.closest?.(".node-sheet");
+    if (!sheet) closeNodeMoreActions();
+  });
+  $("btn-open").onclick = pickFolder;
+  $("btn-open-main").onclick = pickFolder;
+  $("qe-cancel").onclick = closeOverlays;
+  $("qe-save").onclick = saveQuickEntry;
+  $("recall-send").onclick = recallAsk;
+  $("recall-input").addEventListener("keydown", e => { if (e.key === "Enter") recallAsk(); });
+  $("resume-send").onclick = resumeAsk;
+  $("resume-role").addEventListener("keydown", e => { if (e.key === "Enter") resumeAsk(); });
+  $("enrich-kb").onclick = enrichKb;
+  $("brain-chat-toggle").onclick = () => {
+    state.chatCollapsed = !state.chatCollapsed;
+    syncAssistantPanels();
+    if (!state.chatCollapsed) $("recall-input").focus();
+  };
+  $("brain-resume-toggle").onclick = () => {
+    state.resumeExpanded = !state.resumeExpanded;
+    syncAssistantPanels();
+    if (state.resumeExpanded) $("resume-role").focus();
+  };
+  $("brain-scope").onclick = (e) => {
+    const b = e.target.closest("button[data-scope]");
+    if (!b) return;
+    state.chatScope = b.dataset.scope;
+    $("brain-scope").querySelectorAll("button").forEach(x => {
+      const active = x === b;
+      x.classList.toggle("active", active);
+      x.setAttribute("aria-pressed", String(active));
+    });
+  };
+  syncAssistantPanels();
+  $("mm-new-note").onclick = createKbNote;
+  $("tabs").onclick = (e) => { const b = e.target.closest("button[data-view]"); if (b) setView(b.dataset.view); };
+  function syncMmSettingsUi() {
+    const c = state.mm.cfg;
+    const setRange = (id, val, fmt) => {
+      const el = $(id);
+      const lab = $(id + "-val");
+      if (el) el.value = String(val);
+      if (lab) lab.textContent = fmt ? fmt(val) : String(val);
+    };
+    setRange("mm-cfg-linkDist", c.linkDist);
+    setRange("mm-cfg-charge", c.charge);
+    setRange("mm-cfg-gravity", c.gravity, v => Number(v).toFixed(3));
+    setRange("mm-cfg-nodeSizeMult", c.nodeSizeMult, v => Number(v).toFixed(2) + "×");
+    const labelMode = $("mm-cfg-labelMode");
+    if (labelMode) labelMode.value = c.labelMode;
+    const checks = [
+      ["mm-cfg-curvedEdges", c.curvedEdges],
+      ["mm-cfg-nodeGlow", c.nodeGlow],
+      ["mm-cfg-edgeRelLabels", c.edgeRelLabels],
+      ["mm-cfg-showLegend", c.showLegend],
+      ["mm-cfg-freeze", c.freeze],
+    ];
+    for (const [id, on] of checks) {
+      const el = $(id);
+      if (el) el.checked = !!on;
+    }
+    updateMmLegend(Object.keys(state.mm.sim).length, (state.mm.edges || []).length);
+  }
+
+  function applyMmCfgFromUi(opts = {}) {
+    const c = state.mm.cfg;
+    const num = (id, fallback) => {
+      const el = $(id);
+      return el ? Number(el.value) : fallback;
+    };
+    c.linkDist = num("mm-cfg-linkDist", c.linkDist);
+    c.charge = num("mm-cfg-charge", c.charge);
+    c.gravity = num("mm-cfg-gravity", c.gravity);
+    c.nodeSizeMult = num("mm-cfg-nodeSizeMult", c.nodeSizeMult);
+    const labelMode = $("mm-cfg-labelMode");
+    if (labelMode) c.labelMode = labelMode.value;
+    c.curvedEdges = !!$("mm-cfg-curvedEdges")?.checked;
+    c.nodeGlow = !!$("mm-cfg-nodeGlow")?.checked;
+    c.edgeRelLabels = !!$("mm-cfg-edgeRelLabels")?.checked;
+    c.showLegend = !!$("mm-cfg-showLegend")?.checked;
+    c.freeze = !!$("mm-cfg-freeze")?.checked;
+    saveMmSettings();
+    syncMmSettingsUi();
+    // Refresh radii from size multiplier
+    for (const [id, p] of Object.entries(state.mm.sim)) {
+      if (p.node) p.baseR = nodeRadius(p.node);
+    }
+    updateMmLegend(Object.keys(state.mm.sim).length, (state.mm.edges || []).length);
+    if (opts.reheat && !c.freeze) reheatSim(opts.alpha || 0.7);
+    paintMindmap();
+    kickMindmap();
+  }
+
+  function bindMmSettings() {
+    const physicsIds = ["mm-cfg-linkDist", "mm-cfg-charge", "mm-cfg-gravity", "mm-cfg-nodeSizeMult"];
+    for (const id of physicsIds) {
+      const el = $(id);
+      if (!el) continue;
+      el.addEventListener("input", () => applyMmCfgFromUi({ reheat: true, alpha: 0.65 }));
+    }
+    const labelMode = $("mm-cfg-labelMode");
+    if (labelMode) labelMode.addEventListener("change", () => applyMmCfgFromUi({ reheat: false }));
+    for (const id of ["mm-cfg-curvedEdges", "mm-cfg-nodeGlow", "mm-cfg-edgeRelLabels", "mm-cfg-showLegend", "mm-cfg-freeze"]) {
+      const el = $(id);
+      if (!el) continue;
+      el.addEventListener("change", () => {
+        const wasFreeze = state.mm.cfg.freeze;
+        applyMmCfgFromUi({ reheat: id !== "mm-cfg-freeze" && id !== "mm-cfg-showLegend" && id !== "mm-cfg-curvedEdges" && id !== "mm-cfg-nodeGlow" && id !== "mm-cfg-edgeRelLabels", alpha: 0.55 });
+        // Unfreezing: gently reheat so layout can settle again
+        if (id === "mm-cfg-freeze" && wasFreeze && !state.mm.cfg.freeze) reheatSim(0.4);
+      });
+    }
+    $("mm-cfg-reset").onclick = () => {
+      state.mm.cfg = mmDefaultCfg();
+      saveMmSettings();
+      syncMmSettingsUi();
+      for (const [id, p] of Object.entries(state.mm.sim)) {
+        if (p.node) p.baseR = nodeRadius(p.node);
+      }
+      reheatSim(0.85);
+      paintMindmap();
+      kickMindmap();
+    };
+    $("mm-settings-btn").onclick = () => {
+      state.mm.settingsOpen = !state.mm.settingsOpen;
+      $("mm-settings").classList.toggle("hidden", !state.mm.settingsOpen);
+      if (state.mm.settingsOpen) syncMmSettingsUi();
+    };
+    syncMmSettingsUi();
+  }
+  bindMmSettings();
+
+  $("mm-fit").onclick = () => fitMindmap(true);
+  $("mm-reset").onclick = () => {
+    if (state.mm.raf) { cancelAnimationFrame(state.mm.raf); state.mm.raf = 0; }
+    state.mm.focus = null;
+    state.mm.threadMode = false;
+    state.selectedNode = null;
+    state.mm.sim = {};
+    state.mm.hoverId = null;
+    state.mm.dragNode = null;
+    state.mm.edges = [];
+    state.mm.positions = {};
+    state.mm.cam = null;
+    state.mm.didAutoFit = false;
+    state.mm.degree = {};
+    $("mm-kind").value = "";
+    $("mm-type").value = "";
+    drawMindmap({ alpha: 1 });
+    // Fit after layout settles (didAutoFit hook also fires; force a delayed fit too)
+    setTimeout(() => fitMindmap(true), 280);
+  };
+  $("mm-threads").onclick = () => { state.mm.threadMode = !state.mm.threadMode; drawMindmap({ alpha: 0.9 }); };
+  $("mm-kind").onchange = () => drawMindmap({ alpha: 0.85 });
+  $("mm-type").onchange = () => drawMindmap({ alpha: 0.85 });
+  $("mm-search").addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      const q = $("mm-search").value.toLowerCase();
+      const n = (state.graph?.nodes || []).find(x => x.id.includes(q) || (x.label||"").toLowerCase().includes(q));
+      if (n) focusNode(n.id);
+    }
+  });
+  window.addEventListener("resize", () => { if (state.view === "brain") { resizeMindmap(); paintMindmap(); } });
+
+  // Boot: restore handle
+  (async () => {
+    if (location.protocol === "file:") {
+      const ban = $("file-origin-banner");
+      if (ban) ban.classList.remove("hidden");
+    }
+    try {
+      const h = await loadHandle();
+      if (h) await mount(h);
+    } catch {}
+    // Always probe Connect even on the gate (folder not yet opened).
+    await refreshConnectPanel();
+    if (!state._connectTimer) {
+      let ticks = 0;
+      state._connectTimer = setInterval(() => {
+        refreshConnectPanel();
+        ticks += 1;
+        if (ticks === 20) {
+          clearInterval(state._connectTimer);
+          state._connectTimer = setInterval(() => { refreshConnectPanel(); }, 15000);
+        }
+      }, 1500);
+    }
+  })();
+})();
+</script>
+</body>
+</html>

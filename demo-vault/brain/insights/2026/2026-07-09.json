@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "date": "2026-07-09",
+  "generated": "2026-07-10T16:39:19+00:00",
+  "summary": "Morning run before standup. Cold, clear, good pace.; Lantern retrieval returns the right note but ranks it third. Needs a recency term.; Baked bread. Read about chunking strategies for retrieval.",
+  "mood_avg": 4.666666666666667,
+  "themes": [
+    "habits",
+    "health",
+    "knowledge",
+    "lantern",
+    "work"
+  ],
+  "connections": [
+    {
+      "from": "2026-07-09_091500-an",
+      "to": "2026-07-09_154422-pc",
+      "reason": "same day"
+    },
+    {
+      "from": "2026-07-09_154422-pc",
+      "to": "2026-07-09_201010-an",
+      "reason": "same day"
+    }
+  ]
+}

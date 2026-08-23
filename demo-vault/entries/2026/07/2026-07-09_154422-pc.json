@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "2026-07-09_154422-pc",
+  "ts": "2026-07-09T15:44:22+05:30",
+  "type": "idea",
+  "text": "Lantern retrieval returns the right note but ranks it third. Needs a recency term.",
+  "tags": [
+    "work",
+    "lantern"
+  ],
+  "images": [],
+  "mood": 4,
+  "processed": true
+}

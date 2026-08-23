@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Chronicle</string>
+    <string name="share_to_chronicle">Save to Chronicle</string>
+    <string name="widget_quick_capture">Chronicle quick capture</string>
+</resources>

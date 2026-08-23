@@ -1,0 +1,43 @@
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:role-0", "label": "Software Engineer — Northwind Labs"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:role-0", "text": "Northwind Labs · 2024 – Present\n\nRole scope (demo fixture):\n• Maintains the Harbor capture tool.\n• Writes the weekly Trailhead digest."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:role-1", "label": "Junior Developer — Meadowbrook Co-op"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:role-1", "text": "Meadowbrook Co-op · 2022 – 2024\n\nBuilt internal reporting scripts."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:skills-rust", "label": "Rust"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:skills-rust", "text": "Used for the Harbor server and indexer."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:skills-python", "label": "Python"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:skills-python", "text": "Used for the Lantern embedding pipeline."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:skills-ts", "label": "TypeScript"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:skills-ts", "text": "Used for the Trailhead week view."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:habit-mornings", "label": "Protect deep-work mornings"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:habit-mornings", "text": "Recurring intention across July entries."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "concept:habit-run", "label": "Morning run"}
+{"op": "annotate", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "concept:habit-run", "text": "Appears in the 2026-07-09 entries."}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "project:harbor", "label": "Harbor"}
+{"op": "set_doc", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "project:harbor", "doc": "30-Knowledge/Harbor.md"}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "project:lantern", "label": "Lantern"}
+{"op": "set_doc", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "project:lantern", "doc": "30-Knowledge/Lantern.md"}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "project:trailhead", "label": "Trailhead"}
+{"op": "set_doc", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "node": "project:trailhead", "doc": "30-Knowledge/Trailhead.md"}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "topic:retrieval", "label": "Retrieval"}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "topic:local-first", "label": "Local-first"}
+{"op": "create_concept", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "id": "topic:journaling", "label": "Journaling"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "person:sam", "to": "concept:role-0", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "concept:role-0", "to": "project:harbor", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "concept:role-0", "to": "project:trailhead", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "concept:role-1", "to": "concept:skills-python", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "project:harbor", "to": "concept:skills-rust", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "project:lantern", "to": "concept:skills-python", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "project:trailhead", "to": "concept:skills-ts", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "project:lantern", "to": "topic:retrieval", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "project:harbor", "to": "topic:local-first", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "concept:habit-mornings", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "concept:habit-run", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "person:sam", "to": "topic:journaling", "rel": "manual"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-07_083012-pc", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-07_214500-pc", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-08_063320-an", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-08_130015-an", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-08_220840-pc", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-09_091500-an", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-09_154422-pc", "rel": "derived"}
+{"op": "link", "ts": "2026-07-09T20:21:42-07:00", "device": "pc", "from": "topic:journaling", "to": "entry:2026-07-09_201010-an", "rel": "derived"}

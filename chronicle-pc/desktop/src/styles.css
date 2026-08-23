@@ -1,0 +1,152 @@
+:root {
+  color-scheme: light dark;
+  --bg0: #1a1216;
+  --bg1: #2a1c22;
+  --fg: #f6ebe8;
+  --muted: #c4a8a0;
+  --accent: #c45c6a;
+  --line: rgba(255, 255, 255, 0.12);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(120% 80% at 10% 0%, #3a222a 0%, transparent 55%),
+    linear-gradient(160deg, var(--bg0), var(--bg1));
+  color: var(--fg);
+}
+
+.boot {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 0.4rem;
+  text-align: center;
+  padding: 2rem;
+  transition: opacity 0.32s ease;
+}
+
+.boot.launching,
+body.launching {
+  opacity: 0;
+}
+
+#boot-canvas {
+  justify-self: center;
+  margin-bottom: 0.6rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#retry {
+  justify-self: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 1.1rem;
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  background: var(--accent);
+  color: white;
+}
+
+#retry:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.brand {
+  margin: 0;
+  font-size: clamp(2.4rem, 6vw, 3.4rem);
+  letter-spacing: 0.02em;
+  font-weight: 600;
+}
+
+.status {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.detail {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  opacity: 0.85;
+  max-width: 36rem;
+  justify-self: center;
+}
+
+.capture-body {
+  min-height: 100vh;
+}
+
+.capture {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.capture h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.capture textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--fg);
+  padding: 0.75rem 0.85rem;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.capture textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, white);
+  outline-offset: 1px;
+}
+
+.capture-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.capture button {
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  background: var(--accent);
+  color: white;
+}
+
+.capture button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.capture button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

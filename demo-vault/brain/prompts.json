@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "generated": "2026-07-10T16:39:19+00:00",
+  "prompts": [
+    {
+      "id": "reflect-work",
+      "text": "What have you learned about work lately?",
+      "tag": "work"
+    },
+    {
+      "id": "next-work",
+      "text": "What is one small next step for work?",
+      "tag": "work"
+    },
+    {
+      "id": "reflect-chronicle",
+      "text": "What have you learned about chronicle lately?",
+      "tag": "chronicle"
+    },
+    {
+      "id": "next-chronicle",
+      "text": "What is one small next step for chronicle?",
+      "tag": "chronicle"
+    },
+    {
+      "id": "reflect-health",
+      "text": "What have you learned about health lately?",
+      "tag": "health"
+    },
+    {
+      "id": "next-health",
+      "text": "What is one small next step for health?",
+      "tag": "health"
+    },
+    {
+      "id": "reflect-idea",
+      "text": "What have you learned about idea lately?",
+      "tag": "idea"
+    },
+    {
+      "id": "next-idea",
+      "text": "What is one small next step for idea?",
+      "tag": "idea"
+    },
+    {
+      "id": "reflect-dream",
+      "text": "What have you learned about dream lately?",
+      "tag": "dream"
+    },
+    {
+      "id": "next-dream",
+      "text": "What is one small next step for dream?",
+      "tag": "dream"
+    },
+    {
+      "id": "reflect-gratitude",
+      "text": "What have you learned about gratitude lately?",
+      "tag": "gratitude"
+    },
+    {
+      "id": "next-gratitude",
+      "text": "What is one small next step for gratitude?",
+      "tag": "gratitude"
+    },
+    {
+      "id": "reflect-habits",
+      "text": "What have you learned about habits lately?",
+      "tag": "habits"
+    },
+    {
+      "id": "next-habits",
+      "text": "What is one small next step for habits?",
+      "tag": "habits"
+    },
+    {
+      "id": "reflect-meridian",
+      "text": "What have you learned about meridian lately?",
+      "tag": "meridian"
+    },
+    {
+      "id": "next-meridian",
+      "text": "What is one small next step for meridian?",
+      "tag": "meridian"
+    },
+    {
+      "id": "gratitude",
+      "text": "What are you grateful for today?",
+      "tag": null
+    },
+    {
+      "id": "energy",
+      "text": "What gave you energy this week?",
+      "tag": null
+    },
+    {
+      "id": "open-loop",
+      "text": "What open loop is weighing on you?",
+      "tag": null
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "date": "2026-07-08",
+  "generated": "2026-07-10T16:39:19+00:00",
+  "summary": "Dreamt of a library where every book was a graph node. A fox pointed at a shelf labelled Harbor.; Lunch walk. Sketched the Trailhead week view on paper. Feeling steady.; Evenings are better when I close the laptop by 10. Want to protect deep work mornings.",
+  "mood_avg": 3.6666666666666665,
+  "themes": [
+    "dream",
+    "habits",
+    "health",
+    "idea",
+    "symbols",
+    "trailhead",
+    "work"
+  ],
+  "connections": [
+    {
+      "from": "2026-07-08_063320-an",
+      "to": "2026-07-08_130015-an",
+      "reason": "same day"
+    },
+    {
+      "from": "2026-07-08_130015-an",
+      "to": "2026-07-08_220840-pc",
+      "reason": "same day"
+    }
+  ]
+}

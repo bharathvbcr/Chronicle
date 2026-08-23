@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext is required for LAN serve/Ollama. Network security config cannot express
+  RFC1918 CIDR for IP literals, so cleartext is permitted here. All HTTP clients
+  must gate URLs with ServeClient.isPrivateOrLoopbackUrl (Serve + Cloud/Ollama LAN).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
+</network-security-config>

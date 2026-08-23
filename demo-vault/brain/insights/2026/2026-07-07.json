@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "date": "2026-07-07",
+  "generated": "2026-07-10T16:39:19+00:00",
+  "summary": "Wrote down the folder contract for Harbor. Sync ignore list confirmed for index/.; Lantern should show project notes beside journal topics. Import knowledge.json as a second source.",
+  "mood_avg": 4.5,
+  "themes": [
+    "harbor",
+    "idea",
+    "lantern",
+    "work"
+  ],
+  "connections": [
+    {
+      "from": "2026-07-07_083012-pc",
+      "to": "2026-07-07_214500-pc",
+      "reason": "same day"
+    }
+  ]
+}

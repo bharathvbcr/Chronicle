@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.local/contract/config.schema.json",
+  "title": "Chronicle Config v1",
+  "description": "PC-owned config.json; phone never reads this file",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "version",
+    "timezone"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "layout_version": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2,
+      "description": "Vault folder layout version. Phase 4 file-once requires 2; process/serve refuse mismatch with a loud error."
+    },
+    "vault_mirror": {
+      "type": "string",
+      "description": "DEPRECATED \u2014 open Chronicle vault root in Obsidian instead; if set, one-way copy of derived notes/ (edits overwritten)"
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "properties": {
+        "llm": {
+          "type": "string"
+        },
+        "embed": {
+          "type": "string"
+        },
+        "vision": {
+          "type": "string"
+        },
+        "whisper": {
+          "type": "string"
+        }
+      }
+    },
+    "ollama": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Ollama connection and generation options (PC-only); embeddings always use Ollama",
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "description": "Ollama HTTP base URL",
+          "default": "http://localhost:11434"
+        },
+        "num_ctx": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default context window when callers omit num_ctx (Ornith supports up to 262K; recall/ask use higher per-task values)",
+          "default": 32768
+        },
+        "temperature": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "When set, globally overrides per-feature temperatures; null keeps call-site defaults"
+        }
+      }
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Chat/vision provider selection (PC-only). Secrets stay in ~/.config/chronicle/secrets.json \u2014 never vault config.json",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "ollama",
+            "grok",
+            "vertex"
+          ],
+          "default": "ollama",
+          "description": "Active chat/vision provider; embed remains Ollama nomic-embed-text @ 768"
+        },
+        "cloud_consent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in: journal/KB text may leave this machine when provider is grok|vertex"
+        },
+        "vision_cloud_consent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Separate opt-in for sending images to cloud providers"
+        },
+        "grok": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "base_url": {
+              "type": "string",
+              "default": "https://api.x.ai/v1"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional Grok model id; falls back to models.llm"
+            }
+          }
+        },
+        "vertex": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "project": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "GCP project id (non-secret); credentials via ADC"
+            },
+            "location": {
+              "type": "string",
+              "default": "us-central1"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional Vertex model id; falls back to models.llm"
+            }
+          }
+        }
+      }
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Fallback timezone for malformed entry timestamps only"
+    },
+    "e2ee": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Opt-in field-level encryption for entry text (v1.11). kdf/check are non-secret; the passphrase is never stored. PC-owned like config.json itself.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "kdf": {
+          "type": "object",
+          "properties": {
+            "alg": {
+              "enum": [
+                "pbkdf2-sha256"
+              ]
+            },
+            "iter": {
+              "type": "integer",
+              "minimum": 100000
+            },
+            "salt": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "alg",
+            "iter",
+            "salt"
+          ]
+        },
+        "check": {
+          "type": "object",
+          "description": "AES-GCM blob of a fixed known plaintext \u2014 verifies a passphrase without storing it.",
+          "properties": {
+            "nonce": {
+              "type": "string",
+              "contentEncoding": "base64"
+            },
+            "ct": {
+              "type": "string",
+              "contentEncoding": "base64"
+            }
+          },
+          "required": [
+            "nonce",
+            "ct"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,290 @@
+.notes {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 0.85rem;
+  height: 100%;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.notes-nav,
+.notes-editor {
+  border-radius: var(--radius);
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.notes-nav-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.source-tabs {
+  display: flex;
+  gap: 0.2rem;
+  flex: 1;
+}
+
+.source-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.source-tabs button.active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.source-tabs a {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: var(--type-small, 0.85rem);
+}
+
+.source-tabs a.active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.notes-body {
+  border-radius: var(--radius);
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.notes-body-head {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.notes-body-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.md-body {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem 1.25rem 1.5rem;
+  line-height: 1.55;
+}
+
+.journal-entry-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: 0.85rem 1.1rem;
+  overflow: hidden;
+}
+
+.journal-entry-card header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+}
+
+.journal-entry-card .body {
+  padding: 0.75rem 1rem;
+}
+
+.journal-upcoming {
+  margin: 0.85rem 1.1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.notes-nav {
+  overflow: auto;
+}
+
+.tree-dir-label {
+  font-size: var(--type-tiny);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.45rem 0.75rem 0.2rem;
+}
+
+.tree-file,
+.file-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-size: var(--type-small);
+  border-radius: 0;
+}
+
+.tree-file:hover,
+.tree-file.active,
+.file-list button:hover,
+.file-list button.active {
+  background: var(--hover);
+}
+
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0;
+}
+
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.notes-toolbar h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+
+.md-editor {
+  flex: 1;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  padding: 1rem 1.1rem;
+  background: transparent;
+}
+
+.md-preview {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem 1.25rem 1.5rem;
+  line-height: 1.55;
+}
+
+.md-preview h1,
+.md-preview h2,
+.md-preview h3 {
+  font-family: var(--font-serif);
+}
+
+.md-preview pre {
+  overflow: auto;
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.notes-search-row {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+.notes-search {
+  width: 100%;
+  font-size: var(--type-small);
+}
+
+.notes-hubs {
+  border-bottom: 1px solid var(--line);
+  padding: 0.25rem 0;
+}
+
+.hub-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+.hub-row.hub-journal {
+  color: var(--accent);
+}
+
+.hub-badge {
+  font-size: var(--type-tiny);
+  margin-left: auto;
+}
+
+.tree-dir-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--type-tiny);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.45rem 0.75rem 0.2rem;
+}
+
+.tree-dir-btn:hover,
+.tree-dir-btn.active {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.btn.danger-muted {
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.btn.danger-muted:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.wikilink {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  font: inherit;
+}
+
+.file-to-sheet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.file-to-sheet .btn.active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+@media (max-width: 800px) {
+  .notes {
+    grid-template-columns: 1fr;
+  }
+}

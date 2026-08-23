@@ -1,0 +1,50 @@
+name: Pipeline CI
+
+on:
+  push:
+    paths:
+      - "chronicle-pc/**"
+      - "scripts/check-contract-sync.sh"
+      - ".github/workflows/pipeline-ci.yml"
+      - ".github/workflows/contract-sync.yml"
+  pull_request:
+    paths:
+      - "chronicle-pc/**"
+      - "scripts/check-contract-sync.sh"
+      - ".github/workflows/pipeline-ci.yml"
+      - ".github/workflows/contract-sync.yml"
+
+jobs:
+  pytest-ruff:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chronicle-pc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pipeline + dev deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check pipeline tests
+      - name: Pytest (focused audit / API / journal)
+        run: >
+          pytest -q
+          tests/test_lan_auth_amend_urls.py
+          tests/test_phase4_journal.py
+          tests/test_refinement_pipeline.py::test_lan_auth_requires_token_on_vault_routes
+          tests/test_api_journal_amend.py
+          tests/test_dual_read_golden.py
+          tests/test_phase0_rails.py
+          tests/test_url_allowlist.py
+
+  contract-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Byte-identical CONTRACT + schemas
+        run: bash scripts/check-contract-sync.sh

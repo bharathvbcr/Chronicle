@@ -83,8 +83,10 @@ Knowledge is PARA-only (`00-Inbox/` … `90-Archive/`); ResumePoints at `10-Work
 export CHRONICLE_DIR=/path/to/synced/Chronicle
 chronicle process          # transcribe / vision / file-once journal / brain
 chronicle watch            # debounced loop
-chronicle serve            # LAN gateway + QR; SPA at / when frontend/dist exists
+chronicle serve            # LAN gateway + QR (pinned https); SPA at / when frontend/dist exists
 chronicle serve --no-lan   # localhost-only bind
+chronicle pair <device>    # persistent pairing token for a device (no re-scan after restarts)
+chronicle e2ee-setup       # opt-in: encrypt entry text with a passphrase (phone + Mac)
 chronicle brain            # refresh graph / insights / tags
 chronicle doctor           # integrity, orphans, sync-conflicts, stuck unfiled
 chronicle rebuild          # regenerate derived chrome / brain / index
