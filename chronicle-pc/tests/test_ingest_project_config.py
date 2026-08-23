@@ -33,6 +33,27 @@ def test_example_config_ships_and_names_no_real_repo():
         assert name.lower().startswith("example"), f"example config leaks a real repo name: {name}"
 
 
+def test_source_bakes_in_no_inventory_at_all(monkeypatch):
+    """Config-independent form of the guard below, so CI still covers it.
+
+    projects.local.json is gitignored, so the name check below skips on a fresh
+    checkout -- exactly where a regression would land. Two vectors are covered:
+    the dataclass field defaults, and the no-config load path. Checking only the
+    latter is not enough; its discovery branch builds ProjectConfig(repos=...)
+    explicitly and so hides a hardcoded default entirely.
+    """
+    bare = M.ProjectConfig()
+    assert bare.repos == (), f"ProjectConfig defaults hardcode repos: {bare.repos}"
+    assert bare.tier_c_repos == frozenset(), f"defaults hardcode tier-C: {bare.tier_c_repos}"
+    assert bare.tier_a_rules == {}, f"defaults hardcode rules: {sorted(bare.tier_a_rules)}"
+
+    monkeypatch.setattr(M, "_config_path", lambda explicit=None: None)
+    loaded = M.ProjectConfig.load(code_root=None)
+    assert loaded.repos == (), f"no-config load yields repos: {loaded.repos}"
+    assert loaded.tier_c_repos == frozenset()
+    assert loaded.tier_a_rules == {}
+
+
 @pytest.mark.skipif(not LOCAL_CONFIG.is_file(), reason="no local inventory on this machine")
 def test_no_configured_repo_name_appears_in_source():
     """The regression guard: source must not enumerate the repos it ingests."""
