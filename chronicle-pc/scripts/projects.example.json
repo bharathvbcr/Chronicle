@@ -1,0 +1,32 @@
+{
+  "_comment": "Copy to projects.local.json and edit. That file is gitignored so private repo names never enter version control.",
+  "repos": [
+    "ExampleApp",
+    "example-cli"
+  ],
+  "skip_repos": [
+    "Chronicle"
+  ],
+  "doc_stem_aliases": {
+    "ExampleApp_README": "example-app"
+  },
+  "tier_a_rules": {
+    "ExampleApp": {
+      "subdir_any_md": [
+        "docs"
+      ],
+      "basenames": [
+        "CODEBASE_MAP.md"
+      ],
+      "paths": [
+        "docs/DESIGN_SYSTEM.md"
+      ],
+      "subdir_name_contains": {
+        "docs": "architecture"
+      }
+    }
+  },
+  "tier_c_repos": [
+    "example-cli"
+  ]
+}

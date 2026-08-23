@@ -84,3 +84,6 @@ KnowledgeBase/
 *.lock
 !Cargo.lock
 !package-lock.json
+
+# Local project inventory for ingest_project_docs.py (may name private repos)
+projects.local.json

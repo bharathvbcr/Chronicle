@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from collections import defaultdict
@@ -23,29 +24,97 @@ from chronicle_pipeline import curation as curation_mod
 from chronicle_pipeline.migrate_kb import strip_existing_frontmatter, title_from_markdown
 from chronicle_pipeline.paths import resolve_chronicle_dir
 
-PROJECTS: tuple[str, ...] = (
-    "AcademiaTrack",
-    "BlueberryFarming",
-    "ChronosFlow",
-    "DevCouncil",
-    "DevPrism",
-    "Geno-Thermal_Targeting",
-    "LiquiTask",
-    "Meridian",
-    "Portfolio",
-    "Proprioception_Study",
-    "StressProject",
-    "Void",
-    "WisDev",
-    "battery-shop-management-system",
-    "bharathvbcr",
-    "curio",
-    "parameter_golf",
-    "scholarlm",
-    "whimsical-proposal",
-)
+CONFIG_ENV = "CHRONICLE_PROJECTS_CONFIG"
+DEFAULT_CONFIG_NAME = "projects.local.json"
 
-SKIP_REPOS = frozenset({"Chronicle"})
+
+def _config_path(explicit: Path | None = None) -> Path | None:
+    """Resolve the project-inventory config, or None to fall back to discovery.
+
+    An explicitly requested path (flag or env var) that does not exist is an
+    error: silently falling back to a different inventory would ingest a
+    different set of repos than the caller asked for.
+    """
+    for requested, label in (
+        (explicit, "--projects-config"),
+        (Path(os.environ[CONFIG_ENV]) if os.environ.get(CONFIG_ENV) else None, f"${CONFIG_ENV}"),
+    ):
+        if requested is None:
+            continue
+        resolved = requested.expanduser()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"{label} points at a missing file: {resolved}")
+        return resolved
+    default = Path(__file__).resolve().parent / DEFAULT_CONFIG_NAME
+    return default if default.is_file() else None
+
+
+@dataclass(frozen=True)
+class ProjectConfig:
+    """Which repos to ingest and the per-repo tier rules, kept out of source."""
+
+    repos: tuple[str, ...] = ()
+    skip_repos: frozenset[str] = frozenset({"Chronicle"})
+    doc_stem_aliases: dict[str, str] = field(default_factory=dict)
+    tier_a_rules: dict[str, dict] = field(default_factory=dict)
+    tier_c_repos: frozenset[str] = frozenset()
+
+    @classmethod
+    def load(cls, explicit: Path | None = None, code_root: Path | None = None) -> "ProjectConfig":
+        path = _config_path(explicit)
+        if path is None:
+            # No config: discover every git repo under code_root. Nothing is
+            # hardcoded here, so a private repo is never named in source.
+            repos: tuple[str, ...] = ()
+            if code_root and code_root.is_dir():
+                repos = tuple(sorted(
+                    d.name for d in code_root.iterdir()
+                    if d.is_dir() and (d / ".git").exists() and d.name != "Chronicle"
+                ))
+            return cls(repos=repos)
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return cls(
+            repos=tuple(raw.get("repos") or ()),
+            skip_repos=frozenset(raw.get("skip_repos") or {"Chronicle"}),
+            doc_stem_aliases=dict(raw.get("doc_stem_aliases") or {}),
+            tier_a_rules=dict(raw.get("tier_a_rules") or {}),
+            tier_c_repos=frozenset(raw.get("tier_c_repos") or ()),
+        )
+
+    def active_repos(self) -> tuple[str, ...]:
+        return tuple(r for r in self.repos if r not in self.skip_repos)
+
+    def doc_to_repo(self) -> dict[str, str]:
+        """Vault doc stem -> repo folder, derived from the inventory."""
+        mapping = {f"{repo}_README": repo for repo in self.repos}
+        # An alias names the vault's own stem for that repo, so it replaces the
+        # derived default rather than sitting alongside it.
+        for stem, repo in self.doc_stem_aliases.items():
+            mapping.pop(f"{repo}_README", None)
+            mapping[stem] = repo
+        return mapping
+
+    def tier_a_repo_match(self, repo: str, rel: Path) -> bool:
+        rule = self.tier_a_rules.get(repo)
+        if not rule:
+            return False
+        parts, name, posix = rel.parts, rel.name, rel.as_posix()
+        if not name.endswith(".md"):
+            return False
+        if parts[:1] and parts[0] in (rule.get("subdir_any_md") or ()):
+            return True
+        if name in (rule.get("basenames") or ()):
+            return True
+        if posix in (rule.get("paths") or ()):
+            return True
+        for subdir, needle in (rule.get("subdir_name_contains") or {}).items():
+            if parts[:1] == (subdir,) and needle in name.lower():
+                return True
+        return False
+
+
+# Populated in main(); module-level default keeps import-time use working.
+CONFIG = ProjectConfig.load()
 
 TIER_A_ROOT_NAMES: frozenset[str] = frozenset(
     {
@@ -241,14 +310,14 @@ def tier_a_match(repo: str, rel: Path) -> bool:
             return True
 
     parts = rel.parts
+    if CONFIG.tier_a_repo_match(repo, rel):
+        return True
+
     if parts[:1] == ("learning-notes",):
         return True
     if parts[:1] == ("semantic_layer",):
         return True
     if parts[:1] == ("semantic",):
-        return True
-
-    if repo == "BlueberryFarming" and parts[:1] == ("Docs",):
         return True
 
     if parts[:2] == ("docs", "architecture.md") or (
@@ -262,29 +331,6 @@ def tier_a_match(repo: str, rel: Path) -> bool:
         if low.startswith("semantic"):
             return True
 
-    if repo == "Geno-Thermal_Targeting" and name in {"CODEBASE_MAP.md", "METHODS.md"}:
-        return True
-
-    if repo == "LiquiTask" and rel.as_posix() in {
-        "docs/AGENTIC_BOARD_ARCHITECTURE.md",
-        "docs/AGENT_TEAMMATES.md",
-        "docs/DESIGN_SYSTEM.md",
-    }:
-        return True
-
-    if repo == "ChronosFlow" and rel.as_posix() in {
-        "docs/UX_PRINCIPLES.md",
-        "docs/navigation-architecture.md",
-        "docs/product-contract.md",
-    }:
-        return True
-
-    if repo == "DevCouncil" and parts[:1] == ("docs",) and name.endswith(".md"):
-        return True
-
-    if repo in {"WisDev", "DevPrism"} and parts[:1] == ("docs",) and "architecture" in name.lower():
-        return True
-
     if rel.as_posix().startswith("Rust_MLKit/docs/") and name.endswith(".md"):
         return True
 
@@ -297,7 +343,7 @@ def tier_a_match(repo: str, rel: Path) -> bool:
 
 
 def tier_c_match(repo: str, rel: Path) -> bool:
-    if repo not in {"scholarlm", "Portfolio"}:
+    if repo not in CONFIG.tier_c_repos:
         return False
     parts = rel.parts
     if not parts or parts[0] != "docs":
@@ -369,7 +415,7 @@ def build_candidates(
     vault_index = load_vault_readme_index(vault)
     candidates: list[IngestCandidate] = []
 
-    for repo in PROJECTS:
+    for repo in CONFIG.active_repos():
         repo_root = code_root / repo
         if not repo_root.is_dir():
             continue
@@ -599,28 +645,7 @@ Projects, resume points, career notes.
     moc_path.write_text(content, encoding="utf-8")
 
 
-# Map vault overview doc basename stem -> repo folder name.
-DOC_TO_REPO: dict[str, str] = {
-    "AcademiaTrack_README": "AcademiaTrack",
-    "BlueberryFarming_README": "BlueberryFarming",
-    "battery-shop-management-system_README": "battery-shop-management-system",
-    "ChronosFlow_README": "ChronosFlow",
-    "Curio_README": "curio",
-    "DevCouncil_README": "DevCouncil",
-    "DevPrism_README": "DevPrism",
-    "Geno-Thermal_Targeting_README": "Geno-Thermal_Targeting",
-    "LiquiTask_README": "LiquiTask",
-    "Meridian_README": "Meridian",
-    "parameter_golf_README": "parameter_golf",
-    "scholarlm_README": "scholarlm",
-    "StressProject_README": "StressProject",
-    "Void_README": "Void",
-    "Proprioception_Study_README": "Proprioception_Study",
-    "whimsical-proposal_README": "whimsical-proposal",
-    "WisDev_README": "WisDev",
-    "bharathvbcr_README": "bharathvbcr",
-    "Portfolio_README": "Portfolio",
-}
+# Vault overview doc stem -> repo folder name, derived from the project config.
 
 
 def emit_hub_set_doc_ops(
@@ -655,7 +680,7 @@ def emit_hub_set_doc_ops(
         if not nid or not doc:
             continue
         stem = Path(doc).stem
-        repo = DOC_TO_REPO.get(stem)
+        repo = CONFIG.doc_to_repo().get(stem)
         if not repo:
             continue
         hub_doc = f"10-Work/Projects/{repo}/_hub.md"
@@ -785,6 +810,15 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="Refresh existing bodies")
     parser.add_argument("--skip-git", action="store_true", help="Skip .git directories")
     parser.add_argument(
+        "--projects-config",
+        type=Path,
+        default=None,
+        help=(
+            f"Project inventory JSON (default: ${CONFIG_ENV} or {DEFAULT_CONFIG_NAME} "
+            "beside this script; without one, every git repo under --code-root is used)"
+        ),
+    )
+    parser.add_argument(
         "--wire-brain",
         action="store_true",
         help="Append set_doc ops pointing project nodes to _hub.md",
@@ -793,6 +827,16 @@ def main() -> None:
 
     vault = resolve_chronicle_dir(args.vault)
     code_root = args.code_root.expanduser().resolve()
+
+    global CONFIG
+    CONFIG = ProjectConfig.load(args.projects_config, code_root)
+    if not CONFIG.active_repos():
+        print(
+            "No projects resolved. Copy projects.example.json to projects.local.json "
+            f"(or set ${CONFIG_ENV}), or point --code-root at a directory of git repos.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
     if args.wire_brain:
         emit_hub_set_doc_ops(vault, dry_run=args.dry_run and not args.apply)
