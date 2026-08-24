@@ -18,9 +18,14 @@ on:
       - "scripts/check-contract-sync.sh"
       - ".github/workflows/contract-sync.yml"
 
+concurrency:
+  group: contract-sync-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - name: Byte-identical CONTRACT + schemas

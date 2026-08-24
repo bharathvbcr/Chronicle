@@ -14,9 +14,14 @@ on:
       - ".github/workflows/pipeline-ci.yml"
       - ".github/workflows/contract-sync.yml"
 
+concurrency:
+  group: pipeline-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest-ruff:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: chronicle-pc
@@ -40,6 +45,7 @@ jobs:
 
   contract-sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - name: Byte-identical CONTRACT + schemas
