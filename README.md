@@ -1,6 +1,16 @@
 # Chronicle
 
+<p align="left">
+  <a href="https://chronicle.vbcr.dev/"><img src="https://img.shields.io/badge/website-chronicle.vbcr.dev-8B5CF6?style=flat&logo=safari&logoColor=white" alt="Live Website"></a>
+  <img src="https://img.shields.io/badge/architecture-local--first_PARA_vault-purple" alt="Local-First Vault">
+  <img src="https://img.shields.io/badge/sync-Syncthing_peer--to--peer-blue" alt="Syncthing">
+</p>
+
 Shared second brain: phone captures, Mac thinks, Syncthing syncs one folder. **Local-first** (Ollama embeds + default chat); optional BYOK cloud LLM (Mac Grok/Vertex; Android Grok) with opt-in consent — keys never in the vault. No Chronicle accounts or product telemetry.
+
+<p>
+  <a href="https://chronicle.vbcr.dev/"><strong>Explore the Live Second Brain Showcase &amp; Interactive Architecture (chronicle.vbcr.dev) &rarr;</strong></a>
+</p>
 
 ```
 Chronicle/                    # this git workspace

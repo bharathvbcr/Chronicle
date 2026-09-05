@@ -65,3 +65,24 @@ def test_regenerate_upcoming_idempotent_and_drops_checked(tmp_path: Path) -> Non
     content_after = (tmp_path / "Upcoming.md").read_text(encoding="utf-8")
     assert "Task A" not in content_after
     assert "Nothing scheduled" in content_after
+
+
+def test_find_tasks_skips_mirrored_notes_with_source(tmp_path: Path) -> None:
+    # A mirrored repo note declaring source: in frontmatter
+    _note(
+        tmp_path,
+        "10-Work/Projects/myproj/architecture.md",
+        "---\ntitle: Repo Architecture\nsource: Code/myproj/docs/architecture.md\n---\n\n# Architecture\n\n- [ ] Fix repo bug 📅 2026-09-10\n",
+    )
+    # A human vault note with same task format
+    _note(
+        tmp_path,
+        "10-Work/personal_todo.md",
+        "---\ntitle: Personal Todo\n---\n\n# Personal\n\n- [ ] Buy milk 📅 2026-09-10\n",
+    )
+    tasks = find_tasks(tmp_path)
+    descs = [t["desc"] for t in tasks]
+    assert "Buy milk" in descs
+    assert "Fix repo bug" not in descs
+
+

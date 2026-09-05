@@ -179,6 +179,8 @@ def _collect_note_docs(root: Path) -> list[tuple[str, str, str, str]]:
         for path in sorted(journal_root.rglob("*.md")):
             if path.name.startswith(".") or ".sync-conflict" in path.name:
                 continue
+            if path_map.is_chrome_basename(path.name):
+                continue
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
@@ -308,8 +310,10 @@ def run_index(
     }
 
     live_ids: set[str] = set()
+    live_content_hashes: set[str] = set()
     upserted = 0
     skipped = 0
+    dedup_skipped = 0
 
     for e in entries:
         if e2ee.entry_locked(e, root):
@@ -319,6 +323,7 @@ def run_index(
             continue
         text, path_hint = _entry_index_text(root, e, journal_bodies)
         live_ids.add(e.id)
+        live_content_hashes.add(content_hash(text))
         result = _upsert_doc(
             conn,
             doc_id=e.id,
@@ -335,7 +340,17 @@ def run_index(
         else:
             skipped += 1
 
-    for doc_id, kind, rel, text in note_docs:
+    # D3: separate live docs from 90-Archive/ docs
+    live_note_docs = []
+    archive_note_docs = []
+    for doc in note_docs:
+        rel = doc[2]
+        if rel.startswith("90-Archive/") or "/90-Archive/" in f"/{rel}":
+            archive_note_docs.append(doc)
+        else:
+            live_note_docs.append(doc)
+
+    for doc_id, kind, rel, text in live_note_docs:
         # Prefer entry:{id} docs over duplicate journal:{id} for same prose
         if doc_id.startswith("journal:"):
             continue
@@ -353,6 +368,51 @@ def run_index(
                 enrich_fp = str(entry_dict.get("content_hash") or "") + "|" + prefix
             # Skip detection: raw note + enrichment fingerprint
             hash_source = text + "\n" + enrich_fp
+
+        ch = content_hash(hash_source if hash_source is not None else index_text)
+        live_content_hashes.add(content_hash(text))
+        live_content_hashes.add(ch)
+
+        result = _upsert_doc(
+            conn,
+            doc_id=doc_id,
+            kind=kind,
+            path=rel,
+            text=index_text,
+            embed_model=embed_model,
+            existing=existing,
+            force=force,
+            use_vec=use_vec,
+            hash_source=hash_source,
+        )
+        if result == "upserted":
+            upserted += 1
+        else:
+            skipped += 1
+
+    for doc_id, kind, rel, text in archive_note_docs:
+        if doc_id.startswith("journal:"):
+            continue
+        index_text = text
+        hash_source: str | None = None
+        if kind == "kb":
+            entry = enrich_notes.get(doc_id)
+            entry_dict = entry if isinstance(entry, dict) else None
+            prefix = format_enrichment_prefix(entry_dict)
+            if prefix:
+                index_text = prefix + "\n\n" + text
+            enrich_fp = ""
+            if entry_dict is not None:
+                enrich_fp = str(entry_dict.get("content_hash") or "") + "|" + prefix
+            hash_source = text + "\n" + enrich_fp
+
+        ch = content_hash(hash_source if hash_source is not None else index_text)
+        raw_ch = content_hash(text)
+        if ch in live_content_hashes or raw_ch in live_content_hashes:
+            dedup_skipped += 1
+            continue
+
+        live_ids.add(doc_id)
         result = _upsert_doc(
             conn,
             doc_id=doc_id,
@@ -386,16 +446,18 @@ def run_index(
     conn.commit()
     conn.close()
     log.info(
-        "Index %s: upserted=%d skipped=%d stale_deleted=%d",
+        "Index %s: upserted=%d skipped=%d dedup_skipped=%d stale_deleted=%d",
         mode,
         upserted,
         skipped,
+        dedup_skipped,
         stale,
     )
     return {
         "mode": mode,
         "upserted": upserted,
         "skipped": skipped,
+        "dedup_skipped": dedup_skipped,
         "stale_deleted": stale,
         "dry_run": False,
         "path": str(index_db_path(root)),

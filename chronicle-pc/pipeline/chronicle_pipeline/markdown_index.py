@@ -129,6 +129,18 @@ def collect_index_rows(root: Path) -> list[dict[str, str]]:
             seen.add(rel)
             rows.append(_row_for_file(rel, path, text, default_type="journal"))
 
+    live_rows: list[dict[str, str]] = []
+    archive_rows: list[dict[str, str]] = []
+    for r in rows:
+        if r["rel"].startswith("90-Archive/"):
+            archive_rows.append(r)
+        else:
+            live_rows.append(r)
+
+    live_titles = {r["title"] for r in live_rows}
+    filtered_archive_rows = [r for r in archive_rows if r["title"] not in live_titles]
+    rows = live_rows + filtered_archive_rows
+
     rows.sort(key=lambda r: (r["updated"], r["title"].lower()), reverse=True)
     return rows
 

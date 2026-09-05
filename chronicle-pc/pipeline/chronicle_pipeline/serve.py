@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import secrets
 import socket
 from pathlib import Path
@@ -580,6 +581,7 @@ def run_serve(
             "v": CONNECT_VERSION,
             "auth_required": auth_required,
             "tls": use_tls,
+            "pid": os.getpid(),
         },
     )
 
@@ -612,3 +614,9 @@ def run_serve(
     finally:
         if advertised:
             advertiser.stop()
+        serve_file = root / "index" / "serve.json"
+        try:
+            if serve_file.is_file():
+                serve_file.unlink()
+        except OSError:
+            pass

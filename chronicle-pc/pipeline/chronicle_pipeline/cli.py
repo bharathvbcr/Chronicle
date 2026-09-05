@@ -440,7 +440,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         from .pairstore import PairStore
         from .serve import print_ascii_qr, qr_payload_string
 
-        store = PairStore.default_path()
+        store = PairStore(PairStore.default_path())
         token = store.add_device(args.device)
         base = "https://<mac-lan-ip>:8765"
         if args.qr:
@@ -458,7 +458,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     elif cmd == "unpair":
         from .pairstore import PairStore
 
-        store = PairStore.default_path()
+        store = PairStore(PairStore.default_path())
         if store.remove_device(args.device):
             print(f"Revoked device {args.device!r}.")
         else:
@@ -468,9 +468,10 @@ def _dispatch(args: argparse.Namespace) -> int:
     elif cmd == "pairs":
         from .pairstore import PairStore
 
-        devices = PairStore.default_path().list_devices()
+        devices = PairStore(PairStore.default_path()).list_devices()
         _print_result({"devices": devices})
         return 0
+
     elif cmd == "unlock":
         import getpass
         import os as _os
@@ -614,9 +615,29 @@ def _dispatch(args: argparse.Namespace) -> int:
     elif cmd == "doctor":
         from .doctor import run_doctor
 
-        _print_result(
-            run_doctor(cdir, dry_run=dry, fix=getattr(args, "fix", False))
-        )
+        res = run_doctor(cdir, dry_run=dry, fix=getattr(args, "fix", False))
+        _print_result(res)
+        checks = res.get("checks") or {}
+        if checks:
+            for name, chk in checks.items():
+                status = chk.get("status", "ok")
+                detail = chk.get("detail")
+                detail_str = ""
+                if isinstance(detail, dict):
+                    if detail.get("unindexed"):
+                        detail_str = f" ({detail['unindexed']} unindexed)"
+                    elif detail.get("missing"):
+                        detail_str = f" (missing: {', '.join(detail['missing'])})"
+                    elif "stale_pid" in detail:
+                        detail_str = f" (stale pid {detail['stale_pid']})"
+                    elif "age_days" in detail:
+                        detail_str = f" ({detail.get('newest_zip', '')} {detail['age_days']}d)"
+                    elif detail:
+                        detail_str = f" ({detail})"
+                elif detail:
+                    detail_str = f" ({detail})"
+                print(f"{name} {status}{detail_str}")
+        return 0 if res.get("ok") else 1
     elif cmd == "rebuild":
         _print_result(run_rebuild(cdir, dry_run=dry))
     elif cmd == "init-vault-structure":

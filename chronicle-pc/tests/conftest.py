@@ -24,6 +24,10 @@ def chronicle_dir(tmp_path: Path) -> Path:
         shutil.copytree(FIXTURES / "curation", dest / "curation")
     (dest / "notes").mkdir(parents=True, exist_ok=True)
     (dest / "brain").mkdir(parents=True, exist_ok=True)
+    (dest / "_capture" / "entries").mkdir(parents=True, exist_ok=True)
+    (dest / "_attachments").mkdir(parents=True, exist_ok=True)
+    (dest / "_system" / "derived").mkdir(parents=True, exist_ok=True)
+    (dest / "40-Journal").mkdir(parents=True, exist_ok=True)
     (dest / "config.json").write_text(
         '{\n  "version": 1,\n  "layout_version": 2,\n  "timezone": "Asia/Kolkata",\n  "models": {\n'
         '    "llm": "maxwell1500/ornith-35b:Q4_K_M",\n    "embed": "nomic-embed-text",\n'

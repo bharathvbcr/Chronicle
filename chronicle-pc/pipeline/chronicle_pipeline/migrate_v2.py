@@ -51,6 +51,15 @@ If leftover files remain under `kb/notes/`:
 (`migrate-journal-v2` / `layout_version: 2`).
 """
 
+STIGNORE_SEED = """index/
+_staging/
+*.tmp
+*.bak
+.DS_Store
+.stfolder
+"""
+
+
 CLAUDE_MD = """# Chronicle vault (agent guide)
 
 This folder is the Syncthing-synced Chronicle vault. Phone + Mac pipeline + SPA share it.
@@ -61,8 +70,16 @@ This folder is the Syncthing-synced Chronicle vault. Phone + Mac pipeline + SPA 
 - **Knowledge (PARA only):** `00-Inbox/`, `10-Work/`, `20-Personal/`, `30-Knowledge/`, `90-Archive/`
 - **Machine / derived:** `brain/`, `index/` (exclude from sync), `_system/derived/`, `config.json`
 
+## CLI Location
+
+Chronicle CLI is installed at:
+`~/Code/apps/Chronicle/chronicle-pc/.venv/bin/chronicle` (or `$CHRONICLE_BIN` / `~/.local/bin/chronicle`).
+
 ## Anti-fight rules
 
+- **Mirrors:** Repo READMEs and code docs are mirrored into the vault by `kb-sync` (run weekly).
+  Never edit a mirrored note in the vault — edit the repo source file instead.
+  Vault-native notes must **not** carry a `source:` frontmatter line.
 - Do **not** edit `_system/derived/`, hand-edit `brain/`, or whole-file regen `40-Journal/`.
 - Do **not** fight `chronicle process` / `watch` / `brain` — call those for machine state.
 - Capture → entry JSON / knowledge MD / serve API — never into `brain/` or derived paths.
@@ -152,6 +169,26 @@ attachments: []   # only if any
 
 Bump `updated` on every edit. Dates are real calendar dates — resolve relative phrasing
 ("next Friday") to absolute `YYYY-MM-DD` at capture time.
+
+## Mirror frontmatter contract
+
+Notes mirrored from repositories declare their source in frontmatter:
+
+```yaml
+---
+title: "Note Title"
+source: relative/path/to/source.md   # relative to Code/ or ~
+local_path: /absolute/path/to/repo   # local clone root
+ingest_tier: A | B                   # A = primary, B = secondary
+group: ai | devtools | web | core    # topic grouping for MOCs
+status: active | complete            # project status
+source_rewrite: 'before -> after'    # optional string rewrite applied during sync
+created: YYYY-MM-DD                  # date first ingested
+updated: YYYY-MM-DD                  # source file mtime date (managed by kb-sync)
+---
+```
+
+Mirrors are synchronized by `kb-sync` (`mirror_sync.py`). The `updated` field reflects the source file's last modified date. Hand-curated, vault-native notes must **never** declare a `source:` key.
 
 ## Task format
 
@@ -455,7 +492,7 @@ user-invocable: false
 
 1. Read `_system/preferences.md` for answer style.
 2. **Knowledge:** skim `_system/index.md` (rebuild via `chronicle rebuild-markdown-index`) → shortlist PARA notes (`00-Inbox` … `90-Archive`). PARA-only after dual-read cutover.
-3. **Journal / entities:** when Mac `chronicle serve` is up, prefer `POST /search`, `/recall`, `/ask`, `/resume` over scraping `brain/` by hand.
+3. **Journal / entities:** Check `index/serve.json` for active PID. When Mac `chronicle serve` is running, prefer `POST /search`, `/recall`, `/ask`, `/resume` over scraping `brain/` by hand. If serve is down (or `serve.json` is missing/stale), fall back to `_system/index.md` skim and direct markdown retrieval.
 4. **Respect SoT split:**
    - **Prose** = body inside `40-Journal/` `entry:<id>` fences (after filed)
    - **Structured** = `mood`/`tags`/`type`/`ts`/`media` in entry JSON forever
@@ -474,8 +511,9 @@ description: Use for vault housekeeping — process inbox, Upcoming from 📅 ch
 2. **Upcoming** — derive from vault 📅 dated checkboxes (`chronicle process`); do not invent a second task database. Edit tasks in source notes, not `Upcoming.md`.
 3. **Machine state** — `chronicle doctor` (report-only) or `doctor --fix` for JSON sync-conflicts; `chronicle rebuild` when derived state is wrong. Markdown `.sync-conflict-*` = merge by hand; never auto-delete.
 4. **`_system/index.md`** — agent shortlist; rebuild with `chronicle rebuild-markdown-index` (or `index --write-markdown`, or `POST /vault/rebuild-index`). Sqlite under `index/` is RAG SoT — do not hand-maintain the markdown file.
-5. **Backup before migrate** — `chronicle backup` (zip outside Syncthing) before `migrate-v2 --apply`, `cutover-kb --apply`, or `migrate-journal-v2 --apply`.
-6. **Staging** — process `_staging/` into PARA via this skill; archive originals under `90-Archive/_staging-originals/`. Skill/CLI — not an SPA wizard.
+5. **Mirrors & integrity** — use `kb-sync` (in `~/.local/share/kb-sync/bin/kb-sync`) and `kb-audit` (`kb_audit.py`) to manage repo mirrors and check vault integrity. Never hand-edit notes with `source:` frontmatter — edit the repo source file.
+6. **Backup before migrate** — `chronicle backup` (zip outside Syncthing) before `migrate-v2 --apply`, `cutover-kb --apply`, or `migrate-journal-v2 --apply`.
+7. **Staging** — process `_staging/` into PARA via this skill; archive originals under `90-Archive/_staging-originals/`. Skill/CLI — not an SPA wizard.
 
 Do not hand-edit `brain/` or `_system/derived/` to "fix" the graph — use curation ops + `chronicle brain` / `rebuild`.
 """
@@ -665,6 +703,7 @@ def seed_vault_chrome(
         "_templates/attachment-note.md": TEMPLATE_ATTACHMENT_NOTE,
         "_staging/README.md": STAGING_README,
         "Upcoming.md": UPCOMING_SEED,
+        ".stignore": STIGNORE_SEED,
         "00-Inbox/CLAUDE.md": NESTED_CLAUDE_INBOX,
         "10-Work/CLAUDE.md": NESTED_CLAUDE_WORK,
         "20-Personal/CLAUDE.md": NESTED_CLAUDE_PERSONAL,
@@ -678,11 +717,14 @@ def seed_vault_chrome(
         ".claude/skills/vault-maintenance/link-repair.md": SKILL_MAINTENANCE_LINK_REPAIR,
     }
 
-    # 40-Journal/CLAUDE.md only makes sense once the journal folder is relevant
-    # (layout_version >= 2); seeding it on a still-v1 vault would create an
-    # empty 40-Journal/ ahead of migrate-journal-v2.
+    # 40-Journal/CLAUDE.md and layout 2 directories only make sense once layout_version >= 2
     if layout_version >= 2:
         files["40-Journal/CLAUDE.md"] = NESTED_CLAUDE_JOURNAL
+        files.setdefault("_capture/entries/.gitkeep", "")
+        files.setdefault("_attachments/.gitkeep", "")
+        files.setdefault("_system/derived/.gitkeep", "")
+        files.setdefault("40-Journal/.gitkeep", "")
+
 
     # Paths refreshed when --refresh-skills (stale dual-read / index stub text).
     refresh_rels: frozenset[str] = frozenset(

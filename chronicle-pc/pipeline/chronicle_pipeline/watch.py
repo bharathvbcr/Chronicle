@@ -6,11 +6,48 @@ import logging
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
+from .path_map import PARA_AREAS
 from .paths import resolve_chronicle_dir
 from .process import run_process
 
 log = logging.getLogger("chronicle.watch")
+
+try:
+    from watchdog.events import FileSystemEventHandler
+
+    _BaseHandler = FileSystemEventHandler
+except ImportError:
+    _BaseHandler = object  # type: ignore[misc,assignment]
+
+
+class ParaHandler(_BaseHandler):
+    """Event handler for PARA areas that triggers index updates only."""
+
+    def __init__(self, root: Path, *, on_change: Any) -> None:
+        self.root = root
+        self.root_resolved = root.resolve()
+        self.on_change = on_change
+
+    def on_any_event(self, event: Any) -> None:
+        if getattr(event, "is_directory", False):
+            return
+        path = Path(getattr(event, "src_path", "") or "")
+        name = path.name
+        if name.endswith(".tmp") or name.startswith(".") or name == ".DS_Store":
+            return
+        try:
+            rel = path.relative_to(self.root)
+        except ValueError:
+            try:
+                rel = path.resolve().relative_to(self.root_resolved)
+            except (OSError, ValueError):
+                return
+        parts = set(rel.parts)
+        if parts & {"index", "notes", "brain", "_system"}:
+            return
+        self.on_change()
 
 
 def run_watch(
@@ -75,6 +112,43 @@ def run_watch(
                 # Absorb self-writes (entry processed flips, etc.) after the run.
                 ignore_until = time.time() + debounce_s + 0.5
 
+    para_timer: threading.Timer | None = None
+    para_lock = threading.Lock()
+    para_indexing = False
+    para_ignore_until = 0.0
+
+    def _schedule_para() -> None:
+        nonlocal para_timer
+        with para_lock:
+            if para_indexing or time.time() < para_ignore_until:
+                return
+            if para_timer is not None:
+                para_timer.cancel()
+            para_timer = threading.Timer(debounce_s, _run_para)
+            para_timer.daemon = True
+            para_timer.start()
+
+    def _run_para() -> None:
+        nonlocal para_indexing, para_ignore_until, para_timer
+        with para_lock:
+            if para_indexing:
+                return
+            para_indexing = True
+            para_timer = None
+        try:
+            log.info("PARA change detected — updating index")
+            from .index_store import run_index
+            from .markdown_index import rebuild_markdown_index
+
+            run_index(root, dry_run=False)
+            rebuild_markdown_index(root, dry_run=False)
+        except Exception:  # noqa: BLE001
+            log.exception("index update failed during watch")
+        finally:
+            with para_lock:
+                para_indexing = False
+                para_ignore_until = time.time() + debounce_s + 0.5
+
     try:
         from watchdog.events import FileSystemEventHandler
         from watchdog.observers import Observer
@@ -116,7 +190,16 @@ def run_watch(
             if d.is_dir():
                 observer.schedule(Handler(), str(d), recursive=True)
         observer.start()
-        log.info("watchdog observer started")
+
+        para_observer = Observer()
+        para_handler = ParaHandler(root, on_change=_schedule_para)
+        for area in PARA_AREAS:
+            d = root / area
+            d.mkdir(parents=True, exist_ok=True)
+            para_observer.schedule(para_handler, str(d), recursive=True)
+        para_observer.start()
+
+        log.info("watchdog observer started (core + PARA)")
         try:
             while True:
                 time.sleep(1)
@@ -125,6 +208,8 @@ def run_watch(
         finally:
             observer.stop()
             observer.join()
+            para_observer.stop()
+            para_observer.join()
         return
     except ImportError:
         log.warning("watchdog not installed; falling back to mtime polling")

@@ -40,6 +40,11 @@ def find_tasks(root: Path) -> list[dict]:
             text = abs_path.read_text(encoding="utf-8")
         except OSError:
             continue
+        if text.startswith("---\n"):
+            end = text.find("\n---\n", 4)
+            if end != -1 and re.search(r"^source:\s*.+$", text[: end + 5], re.MULTILINE):
+                continue
+
         for m in _TASK_RE.finditer(text):
             tasks.append(
                 {

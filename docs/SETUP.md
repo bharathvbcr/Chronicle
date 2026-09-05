@@ -63,6 +63,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
+# Symlink CLI to PATH (optional, but recommended):
+ln -sf "$(pwd)/.venv/bin/chronicle" ~/.local/bin/chronicle
+
 export CHRONICLE_DIR=~/Chronicle   # same folder Syncthing shares
 ```
 
@@ -123,14 +126,31 @@ Without whisper, `chronicle process` skips transcription, still files available 
 **BYOK cloud (optional):** Mac `llm.provider` = `grok` or `vertex` with `cloud_consent`; Android Settings → Grok with consent. Journal/KB text may leave the device when cloud is on — opt in explicitly.
 
 ## 6. Process (or watch)
+ 
+ ```bash
+ export CHRONICLE_DIR=~/Chronicle
+ source chronicle-pc/.venv/bin/activate
+ 
+ chronicle process    # one shot: transcribe / vision / file-once journal / brain
+ # or
+ chronicle watch      # debounced loop on capture + media + curation + PARA areas
+ ```
+
+### Automated background services (macOS launchd)
+
+Instead of running in a terminal, manage `serve` and `watch` as background user daemons:
 
 ```bash
-export CHRONICLE_DIR=~/Chronicle
-source chronicle-pc/.venv/bin/activate
+# Install and bootstrap services (starts immediately and at login):
+./chronicle-pc/scripts/install-launchd.sh
 
-chronicle process    # one shot: transcribe / vision / file-once journal / brain
-# or
-chronicle watch      # debounced loop on capture + media + curation
+# Check status:
+launchctl print gui/$(id -u)/com.bharath.chronicle.serve | grep state
+launchctl print gui/$(id -u)/com.bharath.chronicle.watch | grep state
+
+# View logs:
+tail -f ~/Library/Logs/chronicle/serve.log
+tail -f ~/Library/Logs/chronicle/watch.log
 ```
 
 Useful later:
@@ -252,6 +272,31 @@ chronicle serve
 - On Android: Settings → scan Mac QR (stores base URL + pairing token for all serve calls).
 
 Use `chronicle serve --no-lan` for a localhost-only bind without auth.
+
+### Managing paired devices via CLI
+
+You can manage phone/tablet device tokens directly from the terminal:
+
+```bash
+# Pair a new device and generate an ASCII QR code to scan:
+chronicle pair phone
+
+# Pair and print full token payload:
+chronicle pair phone --show-token
+
+# List all paired devices and registration timestamps:
+chronicle pairs
+
+# Revoke a paired device:
+chronicle unpair phone
+```
+
+### End-to-end journal & capture lifecycle
+
+1. **Capture on phone**: In the Android app, create a quick text entry, take a photo, or record a voice note. Entries land in `_capture/entries/<id>.json` and attachments in `_attachments/`.
+2. **Peer-to-peer sync**: Syncthing syncs the new files from the phone to `~/Chronicle` on the Mac.
+3. **Automated filing**: The background daemon `com.bharath.chronicle.watch` detects the new capture, runs `chronicle process` (transcribing voice notes via whisper, captioning photos via Ollama vision, and appending entry fences into `40-Journal/YYYY-MM-DD.md`), and updates the SQLite search index.
+4. **Instant recall**: The filed journal and updated brain sync back to the phone via Syncthing, visible in Timeline and accessible via Ask / Recall.
 
 **Concurrency:** Phone SAF and Mac process/serve can still race through Syncthing. Local `vault_process_lock` is best-effort on one machine — not a distributed lock.
 
