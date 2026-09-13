@@ -319,6 +319,43 @@ pub fn build_provider(cfg: &ChronicleConfig) -> Result<(String, Box<dyn ChatProv
     }
 }
 
+/// Vision provider selection — enforces the SEPARATE cloud-vision consent.
+///
+/// Cloud *text* consent does not authorize uploading photo bytes. When the
+/// active provider is a cloud one and `vision_cloud_consent` is absent, degrade
+/// to local Ollama instead of sending the image (parity with the Python
+/// `process._describe_image` gate). Every image caption path must build its
+/// provider through here, never through `build_provider`.
+/// Decision half of vision-provider selection. Pure, so the invariant can be
+/// tested without reading the host's secrets file.
+///
+/// Local providers are always allowed. A cloud provider needs its own
+/// `vision_cloud_consent` — `cloud_consent` alone covers text only.
+pub fn cloud_vision_allowed(
+    cfg: &ChronicleConfig,
+    secrets: &serde_json::Map<String, Value>,
+) -> bool {
+    !is_cloud_provider(&provider_name(cfg)) || resolve_vision_cloud_consent(&cfg.llm, secrets)
+}
+
+pub fn build_vision_provider(
+    cfg: &ChronicleConfig,
+) -> Result<(String, Box<dyn ChatProvider>), ChronicleError> {
+    let pname = provider_name(cfg);
+    if !cloud_vision_allowed(cfg, &load_secrets()) {
+        log_line(
+            "WARNING",
+            &format!(
+                "Cloud vision blocked for provider '{pname}': llm.vision_cloud_consent is not set \
+                 (photo bytes would leave this machine) — falling back to local Ollama."
+            ),
+        );
+        let rt = crate::ollama::runtime_from_config(cfg);
+        return Ok(("ollama".to_string(), Box::new(crate::ollama::OllamaProvider { rt })));
+    }
+    build_provider(cfg)
+}
+
 pub fn runtime_from_config_pub(cfg: &ChronicleConfig) -> crate::LlmRuntime {
     crate::ollama::runtime_from_config(cfg)
 }
@@ -331,5 +368,63 @@ pub fn try_chat_image(provider: &dyn ChatProvider, image_path: &Path) -> Option<
             log_line("WARNING", &format!("vision skipped: {e}"));
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod vision_consent_tests {
+    use super::*;
+
+    fn cfg_with(provider: &str, cloud: bool, vision: bool) -> ChronicleConfig {
+        let mut cfg = ChronicleConfig::default();
+        cfg.llm.provider = provider.into();
+        cfg.llm.cloud_consent = cloud;
+        cfg.llm.vision_cloud_consent = vision;
+        cfg
+    }
+
+    fn secrets(pairs: &[(&str, bool)]) -> serde_json::Map<String, Value> {
+        pairs.iter().map(|(k, v)| (k.to_string(), Value::Bool(*v))).collect()
+    }
+
+    /// The defect: cloud *text* consent was treated as authorizing photo upload.
+    #[test]
+    fn text_consent_alone_does_not_authorize_cloud_vision() {
+        let cfg = cfg_with("grok", true, false);
+        assert!(
+            !cloud_vision_allowed(&cfg, &secrets(&[])),
+            "cloud_consent=true must NOT permit sending photo bytes"
+        );
+    }
+
+    #[test]
+    fn explicit_vision_consent_authorizes_cloud_vision() {
+        let cfg = cfg_with("grok", true, true);
+        assert!(cloud_vision_allowed(&cfg, &secrets(&[])));
+    }
+
+    #[test]
+    fn local_provider_needs_no_cloud_vision_consent() {
+        let cfg = cfg_with("ollama", false, false);
+        assert!(cloud_vision_allowed(&cfg, &secrets(&[])));
+    }
+
+    /// secrets.json wins over config.json, in both directions.
+    #[test]
+    fn secrets_override_config_for_vision_consent() {
+        let granted = cfg_with("grok", true, false);
+        assert!(cloud_vision_allowed(&granted, &secrets(&[("vision_cloud_consent", true)])));
+
+        let revoked = cfg_with("grok", true, true);
+        assert!(!cloud_vision_allowed(&revoked, &secrets(&[("vision_cloud_consent", false)])));
+    }
+
+    /// Blocked cloud vision degrades to local inference rather than failing the
+    /// whole process run — and must never hand back the cloud provider.
+    #[test]
+    fn blocked_cloud_vision_falls_back_to_local_ollama() {
+        let cfg = cfg_with("grok", true, false);
+        let (name, _p) = build_vision_provider(&cfg).expect("degrades to local, not an error");
+        assert_eq!(name, "ollama");
     }
 }

@@ -211,6 +211,7 @@ def candidate_read_paths(root: Path, rel: str) -> list[Path]:
     probes ``10-Work/ResumePoints/X.md`` via normalize. No legacy kb/notes peers.
     """
     rel = normalize_api_path(rel)
+    base = root.resolve()
     seen: set[Path] = set()
     out: list[Path] = []
 
@@ -218,6 +219,13 @@ def candidate_read_paths(root: Path, rel: str) -> list[Path]:
         try:
             rp = p.resolve()
         except OSError:
+            return
+        # A symlink planted inside the vault (by a sync peer or an imported
+        # vault) resolves outside it while the joined path still looks
+        # contained. The canonical target is the authority — and this is the
+        # single gate for writes too, since resolve_write returns whatever
+        # existing candidate this produces.
+        if not rp.is_relative_to(base):
             return
         if rp in seen:
             return

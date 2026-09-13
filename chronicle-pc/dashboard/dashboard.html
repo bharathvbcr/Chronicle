@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Backstop for the untrusted vault JSON this page renders: no remote script
+       origin, no object/frame/base, and network egress limited to self plus the
+       Google Fonts origins the stylesheet below needs. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>Chronicle</title>
   <script>
     // Apply theme before paint to avoid flash (matches Android Color.kt tokens).
@@ -1228,7 +1232,7 @@
     ul.appendChild(all);
     Object.keys(counts).sort().forEach(tag => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>${tag}</span><span>${counts[tag]}</span>`;
+      li.innerHTML = html`<span>${tag}</span><span>${counts[tag]}</span>`;
       if (state.filterTag === tag) li.className = "active";
       li.onclick = () => { state.filterTag = tag; renderTags(); renderTimeline(); };
       ul.appendChild(li);
@@ -1251,7 +1255,7 @@
       if (e.id === state.selectedId) li.classList.add("selected");
       if (e.processed) li.classList.add("locked");
       const preview = (e.text || "").trim().split("\n")[0] || (e.audio ? "(voice)" : "(empty)");
-      li.innerHTML = `<div class="entry-meta"><span class="type-dot type-${e.type}"></span><span>${e.type}</span><span>${(e.ts || "").slice(0,16)}</span>${e.processed ? "<span>🔒</span>" : ""}</div><div class="entry-preview">${escapeHtml(preview.slice(0,140))}</div>`;
+      li.innerHTML = html`<div class="entry-meta"><span class="type-dot type-${e.type}"></span><span>${e.type}</span><span>${(e.ts || "").slice(0,16)}</span>${e.processed ? rawHtml("<span>🔒</span>") : ""}</div><div class="entry-preview">${preview.slice(0,140)}</div>`;
       li.onclick = () => selectEntry(e.id);
       li.dataset.id = e.id;
       ul.appendChild(li);
@@ -1268,16 +1272,16 @@
     detail.classList.remove("hidden");
     const related = (state.insights[(e.ts || "").slice(0,10)] || {}).related_entries || {};
     const rel = related[e.id] || [];
-    detail.innerHTML = `
-      <h2 class="serif">${escapeHtml(e.id)}</h2>
-      <div class="entry-meta"><span class="type-dot type-${e.type}"></span> ${e.type} · ${escapeHtml(e.ts || "")} · mood ${e.mood ?? "—"} ${e.processed ? "· locked" : ""}</div>
-      <div class="chips">${(e.tags || []).map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>
-      <div class="body">${escapeHtml(e.text || "")}</div>
-      ${rel.length ? `<h3 class="serif" style="margin-top:1.5rem;font-size:1rem">Related</h3><ul>${rel.map(id => `<li><a href="#" data-goto="${id}">${id}</a></li>`).join("")}</ul>` : ""}
+    detail.innerHTML = html`
+      <h2 class="serif">${e.id}</h2>
+      <div class="entry-meta"><span class="type-dot type-${e.type}"></span> ${e.type} · ${e.ts || ""} · mood ${e.mood ?? "—"} ${e.processed ? "· locked" : ""}</div>
+      <div class="chips">${rawHtml((e.tags || []).map(t => html`<span class="chip">${t}</span>`).join(""))}</div>
+      <div class="body">${e.text || ""}</div>
+      ${rel.length ? rawHtml(html`<h3 class="serif" style="margin-top:1.5rem;font-size:1rem">Related</h3><ul>${rawHtml(rel.map(id => html`<li><a href="#" data-goto="${id}">${id}</a></li>`).join(""))}</ul>`) : ""}
     `;
     detail.querySelectorAll("[data-goto]").forEach(a => a.onclick = (ev) => { ev.preventDefault(); selectEntry(a.dataset.goto); });
     $("right-title").textContent = "Entry";
-    $("right-body").innerHTML = `<p><strong>${e.id}</strong></p><p>${(e.images || []).length} images · ${(e.audio || []).length} audio</p>`;
+    $("right-body").innerHTML = html`<p><strong>${e.id}</strong></p><p>${(e.images || []).length} images · ${(e.audio || []).length} audio</p>`;
   }
 
   function selectEntry(id) {
@@ -1292,9 +1296,9 @@
     ul.innerHTML = "";
     state.notes.forEach(n => {
       const li = document.createElement("li");
-      li.innerHTML = `<div class="entry-preview">${escapeHtml(n.path)}</div>`;
+      li.innerHTML = html`<div class="entry-preview">${n.path}</div>`;
       li.onclick = () => {
-        $("note-detail").innerHTML = `<h2 class="serif">${escapeHtml(n.path)}</h2><pre class="body" style="font-family:Lora,serif;white-space:pre-wrap">${escapeHtml(n.text)}</pre>`;
+        $("note-detail").innerHTML = html`<h2 class="serif">${n.path}</h2><pre class="body" style="font-family:Lora,serif;white-space:pre-wrap">${n.text}</pre>`;
       };
       ul.appendChild(li);
     });
@@ -1311,13 +1315,13 @@
       el.innerHTML = `<h3 class="serif">Today</h3><p>Your brain is still forming — process on your Mac.</p>`;
       return;
     }
-    el.innerHTML = `
+    el.innerHTML = html`
       <h3 class="serif">Today</h3>
-      <p>${escapeHtml(ins.summary || "")}</p>
+      <p>${ins.summary || ""}</p>
       <p>Mood avg: ${ins.mood_avg ?? "—"}</p>
-      <p>Themes: ${(ins.themes || []).slice(0,5).map(escapeHtml).join(", ") || "—"}</p>
-      ${(ins.on_this_day || []).length ? `<p>On this day: ${ins.on_this_day.slice(0,3).map(escapeHtml).join(", ")}</p>` : ""}
-      ${(ins.time_capsules || []).length ? `<p>Capsules due: ${ins.time_capsules.length}</p>` : ""}
+      <p>Themes: ${(ins.themes || []).length ? (ins.themes || []).slice(0,5).join(", ") : "—"}</p>
+      ${(ins.on_this_day || []).length ? rawHtml(html`<p>On this day: ${ins.on_this_day.slice(0,3).join(", ")}</p>`) : ""}
+      ${(ins.time_capsules || []).length ? rawHtml(html`<p>Capsules due: ${ins.time_capsules.length}</p>`) : ""}
     `;
   }
 
@@ -1350,6 +1354,24 @@
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  }
+
+  // Vault JSON (tags, types, ids, brain output) is untrusted: it arrives from
+  // Syncthing peers and imported files. Build every fragment with this tag so
+  // interpolation is escaped by default — including inside attributes — and an
+  // omission is a visible missing `html`, not a silent injection.
+  // Wrap already-built markup in rawHtml() to opt a value out.
+  function rawHtml(s) { return { __raw: String(s) }; }
+  function html(strings, ...vals) {
+    let out = strings[0];
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i];
+      out += (v && typeof v === "object" && "__raw" in v)
+        ? v.__raw
+        : escapeHtml(v == null ? "" : v);
+      out += strings[i + 1];
+    }
+    return out;
   }
 
   // —— MindMap (KnowledgeBrain-inspired Canvas force graph) ——
@@ -1436,7 +1458,12 @@
   state.mm.cfg = loadMmSettings();
 
   function mmKindColor(kind) {
-    return MM_KIND_COLORS[kind] || MM_KIND_FALLBACK;
+    // `kind` is vault data: use an own-property lookup so inherited keys like
+    // "constructor" cannot reach a style attribute, and require a hex colour.
+    const c = Object.prototype.hasOwnProperty.call(MM_KIND_COLORS, kind)
+      ? MM_KIND_COLORS[kind]
+      : MM_KIND_FALLBACK;
+    return /^#[0-9a-fA-F]{3,8}$/.test(String(c)) ? String(c) : MM_KIND_FALLBACK;
   }
 
   function mmMixHex(hex, to, p) {
@@ -2561,7 +2588,7 @@
     hits.slice(0, 40).forEach((h, i) => {
       const li = document.createElement("li");
       if (i === state.searchHit) li.classList.add("active");
-      li.innerHTML = `<strong>${h.kind}</strong> ${escapeHtml(h.id)}<div style="color:var(--muted);font-size:0.85rem">${escapeHtml(h.label)}</div>`;
+      li.innerHTML = html`<strong>${h.kind}</strong> ${h.id}<div style="color:var(--muted);font-size:0.85rem">${h.label}</div>`;
       li.onclick = () => activateHit(h);
       ul.appendChild(li);
     });

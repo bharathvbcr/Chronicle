@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import logging
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,37 @@ log = logging.getLogger("chronicle.llm.vertex")
 DEFAULT_LOCATION = "us-central1"
 DEFAULT_MODEL = "gemini-2.0-flash-001"
 DEFAULT_TIMEOUT = 300.0
+
+# The location is interpolated into the request *hostname*
+# ("https://{location}-aiplatform.googleapis.com"), so a value carrying a URL
+# delimiter can terminate the authority early and redirect an ADC bearer token
+# to an attacker-controlled host. Region names only ever look like
+# "us-central1" / "northamerica-northeast1" / "global".
+_LOCATION_RE = re.compile(r"^(?:global|[a-z]+(?:-[a-z0-9]+)+)$")
+# project / model land in path segments; reject anything that could add a
+# segment, escape upward, or start a query or fragment.
+_PATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
+
+
+def validate_location(value: str) -> str:
+    """Reject any location that is not a plain Vertex region name."""
+    if not _LOCATION_RE.match(value):
+        raise LlmError(
+            f"Vertex location must be a region name such as 'us-central1'; refused {value!r}. "
+            "The location becomes part of the Google API hostname, so URL "
+            "delimiters are not permitted."
+        )
+    return value
+
+
+def _validate_segment(value: str, *, field: str) -> str:
+    """Reject a URL path segment that could escape or extend the request path."""
+    if not _PATH_SEGMENT_RE.match(value) or value in {".", ".."}:
+        raise LlmError(
+            f"Vertex {field} must be a single plain path segment; refused {value!r}."
+        )
+    return value
+
 
 
 def _adc_access_token() -> str:
@@ -65,10 +97,16 @@ class VertexProvider:
                 "Vertex provider requires project "
                 "(llm.vertex.project, VERTEX_PROJECT, or GOOGLE_CLOUD_PROJECT)"
             )
-        self.project = proj
-        self.location = (location or DEFAULT_LOCATION).strip() or DEFAULT_LOCATION
-        self.default_model = default_model or DEFAULT_MODEL
-        self.vision_model = vision_model or self.default_model
+        self.project = _validate_segment(proj, field="project")
+        self.location = validate_location(
+            (location or DEFAULT_LOCATION).strip() or DEFAULT_LOCATION
+        )
+        self.default_model = _validate_segment(
+            default_model or DEFAULT_MODEL, field="model"
+        )
+        self.vision_model = _validate_segment(
+            vision_model or self.default_model, field="vision model"
+        )
         self._access_token = (access_token or "").strip() or None
 
     def _token(self) -> str:

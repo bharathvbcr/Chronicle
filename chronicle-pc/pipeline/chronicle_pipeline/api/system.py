@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from .. import index_store, kb_enrich, llm, ollama
 from ..config import ensure_config, load_config, save_config
+from ..llm import vertex_provider
 from ..models import GrokOptions, LlmOptions, OllamaOptions, VertexOptions
 from .deps import get_connect_info, get_root
 
@@ -114,14 +115,17 @@ def _provider_status(root: Path) -> dict[str, Any]:
     provider_ok = False
     provider_error: str | None = None
     try:
-        # Health probe should not fail solely on missing consent — report it.
-        provider = llm.get_provider(cfg, enforce_consent=False)
-        provider_ok = provider.reachable()
+        # Report missing consent instead of failing the whole probe — but do NOT
+        # reach the network first: reachable() attaches a live credential, and an
+        # unconsented cloud provider must never receive one.
         if llm.is_cloud_provider(pname) and not llm.resolve_cloud_consent(
             cfg_consent=bool(cfg.llm.cloud_consent)
         ):
             provider_error = "cloud_consent required"
             provider_ok = False
+        else:
+            provider = llm.get_provider(cfg, enforce_consent=False)
+            provider_ok = provider.reachable()
     except llm.LlmError as e:
         provider_error = str(e)
         provider_ok = False
@@ -415,6 +419,13 @@ def post_models(body: ModelsBody, root: Path = Depends(get_root)) -> dict[str, A
             cleaned = body.vertex_location.strip()
             if not cleaned:
                 raise HTTPException(400, "vertex_location must be non-empty")
+            # The location becomes part of the Google API hostname; validate with
+            # the provider's own grammar so a URL delimiter cannot redirect an
+            # ADC bearer token off googleapis.com.
+            try:
+                vertex_provider.validate_location(cleaned)
+            except llm.LlmError as e:
+                raise HTTPException(400, str(e)) from e
             cfg.llm.vertex.location = cleaned
         if "vertex_model" in fields:
             if cfg.llm.vertex is None:
