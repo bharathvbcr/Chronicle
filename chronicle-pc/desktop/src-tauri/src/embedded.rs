@@ -244,35 +244,18 @@ async fn run_embedded(state: SharedServer, handle: tauri::AppHandle) {
     });
     notify(&handle, &state);
 
-    let lan_bind = config.lan;
-    let addr = SocketAddr::new(
-        if lan_bind {
-            std::net::Ipv4Addr::UNSPECIFIED.into()
-        } else {
-            std::net::Ipv4Addr::LOCALHOST.into()
-        },
-        bound.actual_port,
+    // Binding and transport now have one owner in chronicle_server::serve:
+    // loopback plain for this WebView, the LAN address with TLS for the phone.
+    eprintln!(
+        "[chronicle] listening on {} (LAN: {})",
+        bound.base_local,
+        bound.state.connect_info.base
     );
-
-    let router = chronicle_server::serve::build_router_with_layers(bound.state.clone());
-    match tokio::net::TcpListener::bind(addr).await {
-        Ok(listener) => {
-            eprintln!("[chronicle] listening on {addr}");
-            let result = axum::serve(
-                listener,
-                router.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(async move {
-                let _ = rx.wait_for(|v| *v).await;
-            })
-            .await;
+    match chronicle_server::serve::serve_bound(&bound, rx).await {
+        Ok(()) => {
             update(&state, |g| {
                 g.ready = false;
-                g.message = if result.is_ok() {
-                    "Server stopped".into()
-                } else {
-                    format!("Server error: {}", result.err().map(|e| e.to_string()).unwrap_or_default())
-                };
+                g.message = "Server stopped".into();
                 g.shutdown_tx = None;
             });
         }
@@ -280,7 +263,7 @@ async fn run_embedded(state: SharedServer, handle: tauri::AppHandle) {
             update(&state, |g| {
                 g.ready = false;
                 g.message = "Bind failed".into();
-                g.error = Some(format!("could not bind {addr}: {e}"));
+                g.error = Some(e.clone());
             });
         }
     }

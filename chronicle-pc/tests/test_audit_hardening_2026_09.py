@@ -237,3 +237,64 @@ def test_ordinary_para_paths_still_resolve(tmp_path: Path) -> None:
     assert path_map.resolve_write(root, "10-Work/Projects/Harbor.md") == note
     created = path_map.resolve_write(root, "30-Knowledge/New Note.md", create=True)
     assert created.resolve().is_relative_to(root)
+
+
+# --------------------------------------------------------------------------
+# Finding 11 — DNS rebinding reached vault routes (only /connect was guarded)
+# --------------------------------------------------------------------------
+
+
+def _guarded_client(chronicle_dir: Path):
+    from fastapi.testclient import TestClient
+
+    from chronicle_pipeline.serve import TOKEN_HEADER, create_app
+
+    app = create_app(
+        chronicle_dir,
+        connect_info={
+            "base": "http://127.0.0.1:8765",
+            "host": "127.0.0.1",
+            "bind_host": "127.0.0.1",
+            "token": "tok",
+            "auth_required": True,
+            "tls": False,
+        },
+    )
+    return TestClient(app), {TOKEN_HEADER: "tok"}
+
+
+@pytest.mark.parametrize("route", ["/entries", "/health", "/models", "/connect"])
+def test_rebinding_host_is_refused_on_every_route(chronicle_dir: Path, route: str) -> None:
+    """A rebound attacker origin is same-origin, so CORS never fires; the Host
+    allowlist is the only boundary and must cover more than /connect."""
+    client, hdr = _guarded_client(chronicle_dir)
+    resp = client.get(route, headers={**hdr, "Host": "evil.example.com"})
+    assert resp.status_code == 403, (
+        f"{route} accepted a rebinding Host header ({resp.status_code})"
+    )
+    assert "invalid Host header" in resp.text
+
+
+def test_rebinding_host_is_refused_on_mutations(chronicle_dir: Path) -> None:
+    client, hdr = _guarded_client(chronicle_dir)
+    resp = client.post(
+        "/entries",
+        json={"type": "log", "text": "planted"},
+        headers={**hdr, "Host": "evil.example.com"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.1:8765", "localhost:8765"])
+def test_legitimate_hosts_still_work(chronicle_dir: Path, host: str) -> None:
+    client, hdr = _guarded_client(chronicle_dir)
+    assert client.get("/health", headers={**hdr, "Host": host}).status_code == 200
+
+
+def test_operator_override_allows_a_custom_hostname(
+    chronicle_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CHRONICLE_EXTRA_HOSTS", "chronicle.example.internal")
+    client, hdr = _guarded_client(chronicle_dir)
+    resp = client.get("/health", headers={**hdr, "Host": "chronicle.example.internal"})
+    assert resp.status_code == 200
