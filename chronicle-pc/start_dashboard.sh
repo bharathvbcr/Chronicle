@@ -49,8 +49,11 @@ export CHRONICLE_DIR
 echo "CHRONICLE_DIR=${CHRONICLE_DIR}"
 
 # --- Server binary: native Rust first, Python venv as legacy fallback ---
-RS_BIN="$PC/server/target/release/chronicle"
-RS_BIN_DEBUG="$PC/server/target/debug/chronicle"
+# $ROOT is chronicle-pc (this script's directory); $PC was never assigned here,
+# so under `set -u` this aborted with "PC: unbound variable" before any server
+# was found — the browser fallback could not start at all.
+RS_BIN="$ROOT/server/target/release/chronicle"
+RS_BIN_DEBUG="$ROOT/server/target/debug/chronicle"
 if [[ -x "$RS_BIN" ]]; then
   CHRONICLE_BIN="$RS_BIN"
 elif [[ -x "$RS_BIN_DEBUG" ]]; then

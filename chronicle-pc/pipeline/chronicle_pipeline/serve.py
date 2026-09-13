@@ -569,7 +569,10 @@ def run_serve(
     tls_fp: str | None = None
     ssl_kwargs: dict[str, Any] = {}
     if auth_required:
-        pair_store = PairStore.default_path()
+        # default_path() returns the Path; the store has to be constructed
+        # from it. Calling PairStore methods on a Path raised AttributeError
+        # here, so LAN serve never reached the listener.
+        pair_store = PairStore(PairStore.default_path())
         pair_store.ensure_default_device(pair_as)
         token = pair_store.token_for(pair_as)
     if use_tls:

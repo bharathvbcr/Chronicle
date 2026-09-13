@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/sync-Syncthing_peer--to--peer-blue" alt="Syncthing">
 </p>
 
-Shared second brain: phone captures, Mac thinks, Syncthing syncs one folder. **Local-first** (Ollama embeds + default chat); optional BYOK cloud LLM (Mac Grok/Vertex; Android Grok) with opt-in consent — keys never in the vault. No Chronicle accounts or product telemetry.
+Shared second brain: phone captures, Mac thinks, Syncthing syncs one folder. **Local-first** (Ollama embeds + default chat); optional BYOK cloud LLM (Mac Grok, or Vertex via the Python CLI; Android Grok) with opt-in consent — keys never in the vault. Cloud vision needs its own consent flag on top of text consent. No Chronicle accounts or product telemetry.
 
 <p>
   <a href="https://chronicle.vbcr.dev/"><strong>Explore the Live Second Brain Showcase &amp; Interactive Architecture (chronicle.vbcr.dev) &rarr;</strong></a>

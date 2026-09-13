@@ -425,3 +425,64 @@ def test_unlocked_vault_can_still_search_its_own_entries(tmp_path: Path) -> None
 
     assert any(secret in (t or "") for _i, t in _index_rows(root))
     e2ee.lock(root)
+
+
+# --------------------------------------------------------------------------
+# Startup blocker the audit surfaced: LAN serve crashed before it ever listened
+# --------------------------------------------------------------------------
+
+
+def test_lan_run_serve_reaches_the_listener(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_serve assigned PairStore.default_path() — a Path — to pair_store and
+    then called PairStore methods on it, so `chronicle serve` over LAN raised
+    AttributeError before binding. Nothing about the LAN security posture could
+    be exercised while that was true."""
+    from chronicle_pipeline import serve as serve_mod
+
+    vault = tmp_path / "Chronicle"
+    (vault / "_capture" / "entries").mkdir(parents=True)
+    (vault / "config.json").write_text(
+        json.dumps({"version": 1, "layout_version": 2, "timezone": "UTC"}), encoding="utf-8"
+    )
+    monkeypatch.setenv("CHRONICLE_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("CHRONICLE_PAIRING_FILE", str(tmp_path / "cfg" / "pairing.json"))
+
+    called: dict[str, object] = {}
+
+    def fake_run(app, **kwargs):
+        called["app"] = app
+        called["kwargs"] = kwargs
+
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", fake_run)
+
+    serve_mod.run_serve(vault, lan=True, port=0, tls=False)
+
+    assert "app" in called, "run_serve never reached uvicorn.run"
+    # Pairing material was actually created, not just typed correctly.
+    assert (tmp_path / "cfg" / "pairing.json").is_file()
+
+
+def test_lan_run_serve_defaults_to_tls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """LAN implies https unless --no-tls is passed explicitly."""
+    from chronicle_pipeline import serve as serve_mod
+
+    vault = tmp_path / "Chronicle"
+    (vault / "_capture" / "entries").mkdir(parents=True)
+    (vault / "config.json").write_text(
+        json.dumps({"version": 1, "layout_version": 2, "timezone": "UTC"}), encoding="utf-8"
+    )
+    monkeypatch.setenv("CHRONICLE_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("CHRONICLE_PAIRING_FILE", str(tmp_path / "cfg" / "pairing.json"))
+
+    captured: dict[str, object] = {}
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: captured.update(kw))
+    serve_mod.run_serve(vault, lan=True, port=0)
+
+    assert "ssl_certfile" in captured, "LAN serve should terminate TLS by default"
+    assert "ssl_keyfile" in captured
