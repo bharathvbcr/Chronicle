@@ -86,7 +86,8 @@ def test_embed_failure_preserves_prior_embedding(tmp_path: Path) -> None:
             content_hash TEXT NOT NULL,
             embed_model TEXT,
             embedding_json TEXT,
-            updated_at TEXT
+            updated_at TEXT,
+            sealed INTEGER NOT NULL DEFAULT 0
         )
         """
     )

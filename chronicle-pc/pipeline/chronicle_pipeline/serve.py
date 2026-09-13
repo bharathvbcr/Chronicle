@@ -413,6 +413,23 @@ def create_app(
             "ensure_default_device)"
         )
 
+    # A restart clears the in-memory E2EE key but not the index, so any
+    # plaintext captured during an earlier unlocked window would still be on
+    # disk and searchable. Drop it before the first request rather than waiting
+    # for a read boundary to notice.
+    try:
+        from . import index_store as _index_store
+
+        _db = _index_store.index_db_path(root)
+        if _db.is_file():
+            _conn = _index_store._connect(root)
+            try:
+                _index_store.drop_sealed_if_locked(_conn, root)
+            finally:
+                _conn.close()
+    except Exception as e:  # noqa: BLE001 — never block startup on this
+        log.warning("Startup sealed-index purge skipped: %s", e)
+
     # Loud layout hard-gate (Phase 4) — refuse mismatched vault before serving
     try:
         from .config import load_config

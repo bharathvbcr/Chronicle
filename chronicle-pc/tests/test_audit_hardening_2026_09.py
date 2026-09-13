@@ -298,3 +298,130 @@ def test_operator_override_allows_a_custom_hostname(
     client, hdr = _guarded_client(chronicle_dir)
     resp = client.get("/health", headers={**hdr, "Host": "chronicle.example.internal"})
     assert resp.status_code == 200
+
+
+# --------------------------------------------------------------------------
+# Finding 8 — the index kept decrypted text readable across a restart
+# --------------------------------------------------------------------------
+
+
+def _e2ee_vault(tmp_path: Path, passphrase: str) -> Path:
+    from chronicle_pipeline import e2ee
+
+    root = tmp_path / "Chronicle"
+    (root / "_capture" / "entries").mkdir(parents=True)
+    (root / "index").mkdir(parents=True)
+    (root / "config.json").write_text(
+        json.dumps({"version": 1, "layout_version": 2, "timezone": "UTC"}), encoding="utf-8"
+    )
+    e2ee.save_e2ee_config(e2ee.default_e2ee_block(passphrase), root)
+    return root
+
+
+def _index_rows(root: Path) -> list[tuple]:
+    import sqlite3
+
+    from chronicle_pipeline.index_store import index_db_path
+
+    db = index_db_path(root)
+    if not db.is_file():
+        return []
+    conn = sqlite3.connect(str(db))
+    try:
+        return list(conn.execute("SELECT id, text FROM documents"))
+    finally:
+        conn.close()
+
+
+def test_restart_does_not_leave_sealed_plaintext_searchable(tmp_path: Path) -> None:
+    """Unlock -> index -> process restart. The passphrase is gone, so the
+    decrypted snippet must be gone from search AND from the index on disk."""
+    from chronicle_pipeline import e2ee, index_store
+    from chronicle_pipeline.entries import save_entry
+    from chronicle_pipeline.models import Entry
+
+    secret = "the combination is seven four two"
+    root = _e2ee_vault(tmp_path, "correct horse battery staple")
+
+    e2ee.unlock(root, "correct horse battery staple")
+    save_entry(
+        root,
+        Entry(id="2026-08-01_101010-an", ts="2026-08-01T10:10:10+00:00", type="log", text=secret),
+    )
+    index_store.run_index(root, dry_run=False, force=True)
+
+    # Sanity: while unlocked the entry is indexed and findable.
+    assert any(secret in (t or "") for _i, t in _index_rows(root)), "precondition failed"
+
+    # Simulate a process restart: the in-memory key is gone, but nothing called
+    # the lock endpoint, so no purge was triggered by a lifecycle hook.
+    e2ee._UNLOCKED.clear()
+    assert not e2ee.is_unlocked(root)
+
+    hits = index_store.search(root, "combination seven four two", top_k=10)
+    leaked = [h for h in hits if secret in (h.get("text") or "")]
+    assert not leaked, f"sealed plaintext still searchable after restart: {leaked}"
+
+    # Not merely filtered — actually removed from the index at rest.
+    assert not any(secret in (t or "") for _i, t in _index_rows(root)), (
+        "sealed plaintext still present in index/chronicle.sqlite"
+    )
+
+
+def test_get_documents_by_ids_also_refuses_sealed_rows(tmp_path: Path) -> None:
+    from chronicle_pipeline import e2ee, index_store
+    from chronicle_pipeline.entries import save_entry
+    from chronicle_pipeline.models import Entry
+
+    secret = "a private confession"
+    root = _e2ee_vault(tmp_path, "correct horse battery staple")
+    e2ee.unlock(root, "correct horse battery staple")
+    save_entry(
+        root,
+        Entry(id="2026-08-01_101010-an", ts="2026-08-01T10:10:10+00:00", type="log", text=secret),
+    )
+    index_store.run_index(root, dry_run=False, force=True)
+    e2ee._UNLOCKED.clear()
+
+    docs = index_store.get_documents_by_ids(root, ["2026-08-01_101010-an"])
+    assert not [d for d in docs if secret in (d.get("text") or "")]
+
+
+def test_reindexing_while_locked_sweeps_the_stale_row(tmp_path: Path) -> None:
+    """run_index used to add locked ids to live_ids, exempting their stale
+    plaintext rows from the stale-document sweep."""
+    from chronicle_pipeline import e2ee, index_store
+    from chronicle_pipeline.entries import save_entry
+    from chronicle_pipeline.models import Entry
+
+    secret = "roses are red violets are classified"
+    root = _e2ee_vault(tmp_path, "correct horse battery staple")
+    e2ee.unlock(root, "correct horse battery staple")
+    save_entry(
+        root,
+        Entry(id="2026-08-01_101010-an", ts="2026-08-01T10:10:10+00:00", type="log", text=secret),
+    )
+    index_store.run_index(root, dry_run=False, force=True)
+
+    e2ee._UNLOCKED.clear()
+    index_store.run_index(root, dry_run=False, force=False)
+    assert not any(secret in (t or "") for _i, t in _index_rows(root))
+
+
+def test_unlocked_vault_can_still_search_its_own_entries(tmp_path: Path) -> None:
+    """The gate must not break search for a user who holds the passphrase."""
+    from chronicle_pipeline import e2ee, index_store
+    from chronicle_pipeline.entries import save_entry
+    from chronicle_pipeline.models import Entry
+
+    secret = "harbor migration notes"
+    root = _e2ee_vault(tmp_path, "correct horse battery staple")
+    e2ee.unlock(root, "correct horse battery staple")
+    save_entry(
+        root,
+        Entry(id="2026-08-01_101010-an", ts="2026-08-01T10:10:10+00:00", type="log", text=secret),
+    )
+    index_store.run_index(root, dry_run=False, force=True)
+
+    assert any(secret in (t or "") for _i, t in _index_rows(root))
+    e2ee.lock(root)

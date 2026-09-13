@@ -388,6 +388,9 @@ pub fn prepare(config: &ServeConfig) -> Result<Bound, String> {
             // Layout hard gate — python refuses to serve legacy vaults
             // (create_app → require_layout_version); mirror that at startup.
             crate::config::require_layout_version(&cfg).map_err(|e| e.to_string())?;
+            // Same shape as the layout gate: refuse rather than silently
+            // writing plaintext into a vault the user asked to encrypt.
+            crate::config::require_no_e2ee(&cfg).map_err(|e| e.to_string())?;
             state.apply_ollama_settings(&cfg.ollama.base_url, cfg.ollama.num_ctx, cfg.ollama.temperature);
         }
         Err(e) => return Err(e.to_string()),
