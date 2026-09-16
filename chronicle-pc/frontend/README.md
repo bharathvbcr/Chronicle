@@ -1,29 +1,46 @@
-# Chronicle PC frontend (React + Vite)
+# Chronicle application UI
 
-Rose/glass SPA for Timeline, Notes, Brain, and Settings. Talks to `chronicle serve` over REST (CONTRACT v1.10).
+React / TypeScript / Vite application shared by the browser and Tauri desktop. It reads and writes the vault through REST APIs; it does not use the browser File System Access API.
 
-**Notes sections:** Knowledge Base (`30-Knowledge/`), Notes (`00-Inbox/` / `10-Work/` / `20-Personal/` / `90-Archive/`), Journal (`40-Journal/` + derived). `Home.md` opens Notes; cross-section wikilinks switch tab + open. Creates apply convention-complete frontmatter. Legacy `kb/notes/` paths are not openable (cutover complete).
+## Build
+
+From this directory:
+
+```bash
+npm ci
+npm run build
+```
+
+The build runs TypeScript project checking followed by Vite and writes `dist/`. Both Rust and Python servers can serve this output at `/`; the legacy dashboard remains at `/legacy`. Building the Tauri shell does not build this directory automatically.
 
 ## Develop
 
-```bash
-# terminal 1 — API
-cd chronicle-pc && source .venv/bin/activate && chronicle serve --lan
-
-# terminal 2 — Vite (proxies API to :8765)
-cd chronicle-pc/frontend && npm install && npm run dev
-```
-
-Open http://127.0.0.1:5173/
-
-## Production build (served by FastAPI)
+Start the native server from the repo root:
 
 ```bash
-cd chronicle-pc/frontend && npm run build
+export CHRONICLE_DIR="$HOME/Chronicle"
+./chronicle-pc/server/target/release/chronicle serve --no-lan --port 8765
 ```
 
-Output lands in `frontend/dist/`. With that present, `chronicle serve` serves the SPA at `/` (legacy dashboard remains at `/legacy` and in `dashboard/dashboard.html`).
+Then, from this directory, run `npm run dev`. [vite.config.ts](vite.config.ts) declares the development API proxies to port 8765. It is an explicit endpoint list, not a catch-all; when diagnosing a missing development-only API request, compare the path to that list. Served production assets use the server's same-origin API.
 
-## Design tokens (Android parity)
+## UI ownership
 
-Shared rose/glass tokens live in [`src/styles/tokens.css`](src/styles/tokens.css). Mirror these in Android `Color.kt` / type scale.
+- [App.tsx](src/App.tsx): routing and shared entry/search overlays.
+- [views/](src/views/): Timeline, Notes/Knowledge/Journal, Brain, Settings.
+- [api/client.ts](src/api/client.ts): API transport.
+- [notes/](src/notes/): note routing, frontmatter, safe Markdown links, tree helpers.
+- [brain/](src/brain/): graph interaction, node inspection, recall.
+- [styles/tokens.css](src/styles/tokens.css): application theme tokens.
+
+Notes groups editable areas under `00-Inbox/`, `10-Work/`, `20-Personal/`, and `90-Archive/`. Knowledge Base is `30-Knowledge/`. Journal uses `40-Journal/` and derived summaries; amendments go through the conflict-aware journal API. Legacy `kb/notes/` is retired.
+
+## Checks
+
+```bash
+npm run lint
+npm run test
+npm run build
+```
+
+The product website is a different application: `src/pages/Chronicle.jsx` in the Portfolio repository. Do not redesign this vault UI when changing the public website. See [development ownership](../../docs/DEVELOPMENT.md#website-and-public-content).

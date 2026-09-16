@@ -1,76 +1,36 @@
-# Chronicle desktop (Tauri 2)
+# Chronicle desktop
 
-Thin native shell around `chronicle serve` + the React SPA. The SPA remains
-usable in a plain browser on LAN; this app is a wrapper, not a fork.
+Tauri 2 shell with an **embedded Rust server** and the shared React application. The desktop boots `chronicle_server::serve` in-process through [embedded.rs](src-tauri/src/embedded.rs); Python is not its sidecar.
 
-## Prerequisites
+## Build and run
 
-- Node 20+ and npm
-- Rust (rustup) + Xcode Command Line Tools (macOS)
-- Chronicle PC venv with the CLI installed:
+From the repository root, with macOS build tools, Rust, and Node/npm installed:
 
 ```bash
-cd chronicle-pc
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+(cd chronicle-pc/frontend && npm ci && npm run build)
+(cd chronicle-pc/desktop && npm ci && npm run tauri:build)
+export CHRONICLE_DIR="$HOME/Chronicle"
+bash "chronicle-pc/Start Chronicle.command"
 ```
 
-- Vault at `~/Chronicle` or `CHRONICLE_DIR`, or the repo `demo-vault/`
-- Optional: build the SPA so serve can host it (`cd frontend && npm run build`)
+For development use `npm run tauri:dev` from `chronicle-pc/desktop/`. Its Vite server serves the shell startup/capture pages; the shared React vault UI is a separate frontend build.
 
-## Dev
+Current configured bundles are macOS `app` and `dmg`. The configured minimum system version is 12.0; that is not a physical compatibility test. Outputs are under `src-tauri/target/release/bundle/`, with the executable at `src-tauri/target/release/chronicle`. Signing, notarization, installation, and launch from a relocated bundle need separate verification.
 
-```bash
-cd chronicle-pc/desktop
-npm install
-npm run tauri:dev
-```
+## Startup and ownership
 
-On launch the shell:
+1. Resolve the PC source root using environment, executable/cwd ancestry, persisted support path, and configured fallbacks.
+2. Resolve the vault: `CHRONICLE_DIR`, then `~/Chronicle`, then the repo demo fallback.
+3. Validate vault layout and prepare the native server, preferring port 8765.
+4. Report status to the shell and serve the shared UI from the local URL.
+5. Signal the owned in-process server to stop during shutdown/restart.
 
-1. Resolves the vault (`CHRONICLE_DIR` → `~/Chronicle` → `demo-vault`)
-2. Finds `chronicle` (`.venv/bin/chronicle`, then `PATH`)
-3. Reuses a healthy serve if `index/serve.json` / `/health` already respond
-4. Otherwise spawns `chronicle serve --lan --port 8765` and waits on `/health`
-5. Navigates the webview to `http://127.0.0.1:<port>/` (actual port from `serve.json`)
+The **demo fallback is not serve-ready**: it is layout version 1. Use an explicit version-2 vault or migrate a copy first.
 
-## Release build
+The current app still needs the PC checkout and `frontend/dist/` on disk. `Start Chronicle.command` sets `CHRONICLE_PC_ROOT` and prefers a built executable; it writes the persisted support path only when the Python CLI file exists. Therefore, running that launcher once without a venv does not prove a relocated `/Applications` bundle can find the checkout later. Do not describe this as a self-contained installer.
 
-```bash
-cd chronicle-pc/desktop
-npm install
-npm run tauri:build
-```
+## Native surfaces
 
-App bundle (macOS):
+[lib.rs](src-tauri/src/lib.rs) wires tray actions, quick capture, window state, and embedded server startup. These use the same vault API as the browser UI. The webview connects over loopback HTTP; Android connects to the server's paired LAN endpoint.
 
-`src-tauri/target/release/bundle/macos/Chronicle.app`
-
-Binary:
-
-`src-tauri/target/release/chronicle`
-
-`Start Chronicle.command` prefers the built **binary** when present (so
-`CHRONICLE_PC_ROOT` reaches the process), then the `.app` bundle, otherwise
-falls back to the browser launcher (`start_dashboard.sh`).
-
-## Native features
-
-- **Menu-bar tray**: Show Chronicle, Quick Capture, Quit
-- **Quick Capture**: small window that `POST`s to `/entries` on the local API
-- **Dock badge**: unprocessed entry count (`GET /entries?processed=false`)
-- **Window state**: size/position restored via `tauri-plugin-window-state`
-
-## Sidecar notes
-
-- Owned serve processes are killed when the app quits
-- If serve was already running, the shell attaches without owning it
-- Port preference: `index/serve.json` → `8765` → scan `8765..8814`
-- CLI discovery: `CHRONICLE_PC_ROOT` → walk from binary → persisted
-  `~/Library/Application Support/Chronicle/pc_root` → cwd →
-  `$HOME/Code/Chronicle/chronicle-pc` → `.venv/bin/chronicle` / `PATH`
-- Vault discovery: `CHRONICLE_DIR` → `~/Chronicle` → repo `demo-vault/`
-- `Start Chronicle.command` sets `CHRONICLE_PC_ROOT`, writes the support
-  `pc_root` file, and launches the binary so Finder/`/Applications` opens can
-  find the venv even when the `.app` bundle is elsewhere
+Python is still useful for file watching and migrations. See the [command matrix](../README.md#command-availability), [setup](../../docs/SETUP.md), and [development checks](../../docs/DEVELOPMENT.md).
