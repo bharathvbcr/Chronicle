@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Same exclusions for both transports. See backup_rules.xml for why: capture
+  content and pairing secrets live outside the vault in sharedpref and files,
+  and must not ride along in a cloud backup or a device transfer.
+-->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="chronicle_prefs.xml" />
         <exclude domain="sharedpref" path="chronicle_secure_prefs.xml" />
+        <exclude domain="file" path="lan_outbox.jsonl" />
+        <exclude domain="file" path="pending_media" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="chronicle_prefs.xml" />
         <exclude domain="sharedpref" path="chronicle_secure_prefs.xml" />
+        <exclude domain="file" path="lan_outbox.jsonl" />
+        <exclude domain="file" path="pending_media" />
     </device-transfer>
 </data-extraction-rules>

@@ -213,16 +213,30 @@ def _connect_allowed_hosts(connect_info: dict[str, Any]) -> frozenset[str]:
         v = connect_info.get(key)
         if isinstance(v, str) and v.strip():
             allowed.add(v.strip().lower())
+    # The guard covers every route now, so every name a legitimate client may
+    # dial has to be here: the mDNS host name phones resolve, plus an explicit
+    # operator override for a custom DNS alias or reverse proxy.
+    host = socket.gethostname().strip().lower()
+    if host.endswith(".local"):
+        host = host[: -len(".local")]
+    if host:
+        allowed.add(host)
+        allowed.add(f"{host}.local")
+    for part in os.environ.get("CHRONICLE_EXTRA_HOSTS", "").split(","):
+        name = part.strip().lower()
+        if name:
+            allowed.add(name)
     return frozenset(allowed)
 
 
 class ConnectHostGuardMiddleware(BaseHTTPMiddleware):
-    """Reject ``/connect*`` requests whose Host header is not ours.
+    """Reject requests whose Host header is not ours.
 
-    A DNS-rebinding page resolves an attacker hostname to 127.0.0.1 and reads
-    the loopback-only pairing token same-origin. The Host header still names
-    the attacker domain, so an allowlist of loopback + advertised hosts blocks
-    it without affecting legitimate clients.
+    A DNS-rebinding page resolves an attacker hostname to 127.0.0.1 and then
+    talks to the server *same-origin*, so CORS never applies. Guarding only
+    ``/connect`` left every vault route reachable that way — and in loopback
+    mode the token check is off entirely, so this allowlist is the boundary.
+    It therefore covers the whole surface, not just pairing.
     """
 
     def __init__(self, app, *, allowed_hosts: frozenset[str]) -> None:
@@ -230,14 +244,12 @@ class ConnectHostGuardMiddleware(BaseHTTPMiddleware):
         self.allowed_hosts = allowed_hosts
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        if path == "/connect" or path.startswith("/connect/"):
-            host = _host_header_hostname(request.headers.get("host", ""))
-            if host not in self.allowed_hosts:
-                return JSONResponse(
-                    status_code=403,
-                    content={"ok": False, "error": "invalid Host header"},
-                )
+        host = _host_header_hostname(request.headers.get("host", ""))
+        if host not in self.allowed_hosts:
+            return JSONResponse(
+                status_code=403,
+                content={"ok": False, "error": "invalid Host header"},
+            )
         return await call_next(request)
 
 
@@ -401,6 +413,23 @@ def create_app(
             "ensure_default_device)"
         )
 
+    # A restart clears the in-memory E2EE key but not the index, so any
+    # plaintext captured during an earlier unlocked window would still be on
+    # disk and searchable. Drop it before the first request rather than waiting
+    # for a read boundary to notice.
+    try:
+        from . import index_store as _index_store
+
+        _db = _index_store.index_db_path(root)
+        if _db.is_file():
+            _conn = _index_store._connect(root)
+            try:
+                _index_store.drop_sealed_if_locked(_conn, root)
+            finally:
+                _conn.close()
+    except Exception as e:  # noqa: BLE001 — never block startup on this
+        log.warning("Startup sealed-index purge skipped: %s", e)
+
     # Loud layout hard-gate (Phase 4) — refuse mismatched vault before serving
     try:
         from .config import load_config
@@ -540,7 +569,10 @@ def run_serve(
     tls_fp: str | None = None
     ssl_kwargs: dict[str, Any] = {}
     if auth_required:
-        pair_store = PairStore.default_path()
+        # default_path() returns the Path; the store has to be constructed
+        # from it. Calling PairStore methods on a Path raised AttributeError
+        # here, so LAN serve never reached the listener.
+        pair_store = PairStore(PairStore.default_path())
         pair_store.ensure_default_device(pair_as)
         token = pair_store.token_for(pair_as)
     if use_tls:

@@ -7,6 +7,47 @@ unless you explicitly enable a BYOK model. The vault is plain files on disk.
 
 Open a private security advisory on the repository rather than a public issue.
 
+## What is protected, and what is not
+
+**LAN transport.** When `serve` binds anything other than loopback it
+terminates TLS with a self-signed certificate generated once into
+`~/.config/chronicle/tls/` (0700 dir, 0600 key). The pairing QR is a v2 payload
+carrying `tls_fp` — the base64 SHA-256 of the certificate's SubjectPublicKeyInfo
+— which the phone pins directly, so a LAN attacker cannot impersonate the Mac
+even with a valid CA-issued certificate. If TLS material cannot be prepared,
+LAN serving **fails** rather than falling back to cleartext; use `--no-lan`.
+
+Loopback is served as plain HTTP on a separately bound socket. It never leaves
+the machine, and the desktop WebView has no way to be told to trust a
+self-signed certificate. Every route — not just `/connect` — checks the `Host`
+header against an allowlist, so a DNS-rebinding page cannot reach the vault
+same-origin. Set `CHRONICLE_EXTRA_HOSTS` (comma-separated) if you front the
+server with a custom DNS name or reverse proxy.
+
+**The pairing token is a full vault credential.** It is bound to one endpoint
+identity: change the address or the certificate pin and the phone drops the
+token and asks you to re-pair by QR. mDNS discovery is unauthenticated, so it
+is treated as an address suggestion only and never carries a credential.
+
+**Cloud models are opt-in and split.** `llm.cloud_consent` covers text.
+Uploading photos additionally requires `llm.vision_cloud_consent`; without it
+image description falls back to local Ollama rather than sending the bytes.
+
+**E2EE is field-level and opt-in.** It seals entry `text` for unfiled captures.
+Filed `40-Journal` prose is intentionally plaintext for Obsidian compatibility,
+and attachments are not encrypted. Two limits worth knowing:
+
+- The **native Rust server has no E2EE support**. Rather than writing plaintext
+  beside your ciphertext, it refuses to serve or write to a vault with
+  `e2ee.enabled=true`. Use the Python `chronicle serve` for encrypted vaults.
+- A capture taken on the phone while the vault is locked is **not** written to
+  the vault in the clear. It is parked encrypted outside the vault (Android
+  Keystore) and filed on the next unlock.
+
+**The vault itself is plain files.** Anything with read access to the folder —
+including every Syncthing peer you have paired — can read it. E2EE narrows that
+for unfiled capture text only; it is not whole-vault encryption.
+
 ## Dependency advisories
 
 Dependabot watches `package-lock.json` and `Cargo.lock`. Patch advisories by

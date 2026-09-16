@@ -70,6 +70,14 @@ pub fn load_entry(path: &Path) -> Option<Entry> {
 }
 
 pub fn save_entry(root: &Path, entry: &Entry) -> Result<PathBuf, ChronicleError> {
+    // Defence in depth behind the startup gate: CLI entry points that never
+    // call serve::prepare reach this owner directly, and this is the exact
+    // line where plaintext would hit the disk of an encrypted vault.
+    if !entry.text.trim().is_empty() {
+        if let Ok(cfg) = crate::config::load_config(root) {
+            crate::config::require_no_e2ee(&cfg)?;
+        }
+    }
     let mut path = entry_path(root, &entry.id)?;
     if !path.is_file() {
         path = entry_path_opts(root, &entry.id, false)?;
@@ -160,5 +168,86 @@ mod tests {
         let all = load_all_entries(root).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, "2026-08-20_101500-an");
+    }
+}
+
+/// Regression guard for the 2026-09 audit's finding 7: the native server wrote
+/// plaintext captures into a vault whose owner had enabled E2EE.
+#[cfg(test)]
+mod e2ee_fail_closed_tests {
+    use super::*;
+
+    fn vault(e2ee: bool) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("_capture/entries")).unwrap();
+        let cfg = if e2ee {
+            r#"{"version":1,"layout_version":2,"timezone":"UTC",
+                "e2ee":{"enabled":true,"kdf":{"alg":"pbkdf2-sha256","iter":600000,"salt":"c2FsdA=="}}}"#
+        } else {
+            r#"{"version":1,"layout_version":2,"timezone":"UTC"}"#
+        };
+        std::fs::write(d.path().join("config.json"), cfg).unwrap();
+        d
+    }
+
+    fn entry(text: &str) -> Entry {
+        let mut e = Entry::default();
+        e.id = "2026-07-09_120000-pc".into();
+        e.ts = "2026-07-09T12:00:00+00:00".into();
+        e.kind = "log".into();
+        e.text = text.into();
+        e
+    }
+
+    #[test]
+    fn plaintext_capture_is_refused_in_an_encrypted_vault() {
+        let d = vault(true);
+        let err = save_entry(d.path(), &entry("a private thought")).unwrap_err();
+        assert!(
+            err.to_string().contains("end-to-end encryption"),
+            "wrong refusal: {err}"
+        );
+        let written: Vec<_> = walkdir_json(d.path());
+        assert!(written.is_empty(), "plaintext entry reached disk: {written:?}");
+    }
+
+    #[test]
+    fn ordinary_vault_still_saves() {
+        let d = vault(false);
+        let p = save_entry(d.path(), &entry("a normal note")).expect("plain vault must still work");
+        assert!(p.is_file());
+        let raw = std::fs::read_to_string(&p).unwrap();
+        assert!(raw.contains("a normal note"));
+    }
+
+    /// config.json is not the place to smuggle a bypass: a malformed or absent
+    /// e2ee block means "not enabled", but an enabled one always refuses.
+    #[test]
+    fn enabled_flag_is_read_from_the_nested_block() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("_capture/entries")).unwrap();
+        std::fs::write(
+            d.path().join("config.json"),
+            r#"{"version":1,"layout_version":2,"timezone":"UTC","e2ee":{"enabled":false}}"#,
+        )
+        .unwrap();
+        assert!(save_entry(d.path(), &entry("fine")).is_ok());
+    }
+
+    fn walkdir_json(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![root.join("_capture")];
+        while let Some(dir) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "json") {
+                    out.push(p);
+                }
+            }
+        }
+        out
     }
 }

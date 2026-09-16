@@ -157,6 +157,8 @@ When `chronicle serve` binds beyond localhost (default LAN mode → `0.0.0.0`):
 
 When enabled, captures seal `text` into `text_enc = {v, nonce, ct}` (AES-256-GCM) and set `text: ""`. Both apps round-trip unknown keys, so older versions never destroy blobs. Locked behavior is fail-closed: pipeline skips transcription/vision/filing/indexing for locked entries rather than writing plaintext; search/recall exclude them. Filed `40-Journal` prose is intentionally plaintext (Obsidian compatibility) — E2EE protects unfiled captures at rest (lost-phone SAF dir, folder backups) and the capture window.
 
+**Locked capture (phone):** a capture taken while the vault is locked is NOT written to the vault in the clear. It is parked in `SecurePrefs` (EncryptedSharedPreferences under an AndroidKeyStore master key) — off the synced vault and excluded from Auto Backup / device transfer — and re-sealed with the vault key into `_capture/entries/` on the next unlock. The queue is bounded (500 entries / 2M chars); beyond that capture is refused with a prompt to unlock, rather than silently dropped. Staged attachment bytes live in `filesDir/pending_media/` until the same flush. The **native Rust server has no E2EE support**: it refuses to serve or write to a vault with `e2ee.enabled=true` rather than saving plaintext beside the ciphertext — use the Python `chronicle serve` for encrypted vaults.
+
 ### Syncthing / concurrency
 
 Phone SAF edits and Mac `serve`/pipeline writes can still race via Syncthing. `vault_process_lock` on journal amend and KB mutators is **best-effort local only** — not a distributed lock. Prefer one writer per note; resolve `.sync-conflict-*` with `chronicle doctor`.

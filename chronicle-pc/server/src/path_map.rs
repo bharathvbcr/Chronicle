@@ -154,8 +154,33 @@ pub fn preferred_write_rel(rel: &str) -> String {
 fn abs_under_root(root: &Path, rel: &str) -> Result<PathBuf, ChronicleError> {
     let abs = root.join(rel);
     let root_resolved = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let resolved = abs.canonicalize().unwrap_or(abs.clone());
-    if !resolved.starts_with(&root_resolved) && !abs.starts_with(&root_resolved) {
+
+    // Lexical containment is necessary but NOT sufficient. A symlink planted in
+    // the vault (by a sync peer or an imported vault) resolves outside the root
+    // while the joined path still starts with it — so both checks must pass,
+    // and the canonical one is the authority.
+    if !abs.starts_with(root) && !abs.starts_with(&root_resolved) {
+        return Err(ChronicleError::msg("note path escapes vault root"));
+    }
+
+    // Resolve the target itself when it exists; otherwise resolve the nearest
+    // existing ancestor, because a create target's parent directory can be a
+    // symlink pointing out of the vault.
+    let mut probe: &Path = abs.as_path();
+    let resolved = loop {
+        match probe.canonicalize() {
+            Ok(p) => break p,
+            Err(_) => match probe.parent() {
+                Some(parent) if parent.starts_with(root) || parent.starts_with(&root_resolved) => {
+                    probe = parent
+                }
+                // Walked past the root without finding anything on disk: the
+                // path is lexically contained and nothing can redirect it.
+                _ => break root_resolved.clone(),
+            },
+        }
+    };
+    if !resolved.starts_with(&root_resolved) {
         return Err(ChronicleError::msg("note path escapes vault root"));
     }
     Ok(abs)
@@ -316,5 +341,88 @@ mod tests {
         let files = iter_knowledge_md(root);
         let rels: Vec<&str> = files.iter().map(|(r, _)| r.as_str()).collect();
         assert_eq!(rels, vec!["00-Inbox/note.md"], "unexpected: {rels:?}");
+    }
+}
+
+#[cfg(test)]
+mod symlink_containment_tests {
+    use super::*;
+    use std::fs;
+
+    /// Minimal PARA vault. Returns (tempdir guard, canonical root).
+    ///
+    /// The root must be canonical. A real vault path like `/Users/x/Chronicle`
+    /// has no symlinked ancestor, whereas macOS `tempdir()` hands back
+    /// `/var/...` which canonicalises to `/private/var/...`. Testing against the
+    /// raw tempdir path masks this bug completely, because the buggy lexical
+    /// branch can then never be the one that accepts.
+    fn vault() -> (tempfile::TempDir, PathBuf) {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        fs::create_dir_all(root.join("10-Work/Projects")).unwrap();
+        fs::create_dir_all(root.join("30-Knowledge")).unwrap();
+        (d, root)
+    }
+
+    /// A .md symlink pointing at a file outside the vault must not be readable.
+    #[test]
+    fn read_refuses_md_symlink_to_outside_file() {
+        let (_d, root) = vault();
+        let outside = root.parent().unwrap().join("outside-secret.md");
+        fs::write(&outside, "TOP SECRET").unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("30-Knowledge/leak.md")).unwrap();
+
+        let got = resolve_read_abs(&root, "30-Knowledge/leak.md");
+        assert!(
+            matches!(got, Err(_) | Ok(None)),
+            "symlink to an external file was accepted for read: {got:?}"
+        );
+    }
+
+    /// A symlinked directory must not become a write exit.
+    #[test]
+    fn write_refuses_path_through_symlinked_directory() {
+        let (_d, root) = vault();
+        let outside = root.parent().unwrap().join("outside-dir");
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("30-Knowledge/escape")).unwrap();
+
+        fs::write(outside.join("victim.md"), "original").unwrap();
+        let got = resolve_write(&root, "30-Knowledge/escape/victim.md");
+        assert!(got.is_err(), "overwrite resolved through a symlinked dir: {got:?}");
+
+        let got = resolve_write(&root, "30-Knowledge/escape/brand-new.md");
+        assert!(got.is_err(), "create resolved through a symlinked dir: {got:?}");
+    }
+
+    /// Ordinary in-vault paths keep working — existing reads and new creates.
+    #[test]
+    fn ordinary_vault_paths_still_resolve() {
+        let (_d, root) = vault();
+        fs::write(root.join("10-Work/Projects/Harbor.md"), "# Harbor\n").unwrap();
+
+        let read = resolve_read_abs(&root, "10-Work/Projects/Harbor.md").unwrap();
+        assert_eq!(read, Some(root.join("10-Work/Projects/Harbor.md")));
+
+        let write = resolve_write(&root, "10-Work/Projects/Harbor.md").unwrap();
+        assert!(write.starts_with(&root));
+
+        let create = resolve_write(&root, "30-Knowledge/New Note.md").unwrap();
+        assert!(create.starts_with(&root), "create target left the vault: {create:?}");
+    }
+
+    /// `..` is rejected by the API validator, and — belt and braces — by the
+    /// resolver too, since resolve_* only calls normalize_api_path (which
+    /// normalises; it does not validate).
+    #[test]
+    fn literal_parent_traversal_refused_at_both_layers() {
+        let (_d, root) = vault();
+        let hostile = "30-Knowledge/../../etc/passwd.md";
+        assert!(validate_knowledge_rel(hostile).is_err(), "API validator must reject ..");
+        assert!(
+            resolve_write(&root, hostile).is_err(),
+            "resolver must reject .. even without the API validator"
+        );
+        assert!(matches!(resolve_read_abs(&root, hostile), Err(_) | Ok(None)));
     }
 }

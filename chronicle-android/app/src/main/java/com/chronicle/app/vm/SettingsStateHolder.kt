@@ -88,23 +88,46 @@ class SettingsStateHolder {
     internal val ollamaLanUrlMutable get() = _ollamaLanUrl
 
     /**
-     * Apply a LAN base URL. Rejects public IP-literal hosts (hostnames are
-     * enforced per-request). [token] null keeps existing; blank clears; non-blank stores.
-     * [tlsFp] null keeps existing; blank clears; non-blank stores the cert pin.
+     * Apply a LAN base URL.
+     *
+     * Rejects public IP-literal hosts (hostnames are enforced per-request).
+     * [token] null keeps the existing one ONLY while the endpoint identity is
+     * unchanged; blank clears; non-blank stores. [tlsFp] null keeps existing;
+     * blank clears; non-blank stores the cert pin.
+     *
+     * The pairing token is a credential for one specific server. It used to
+     * survive a change of address or pin, so pointing the app at a
+     * newly-discovered host (mDNS is unauthenticated — anyone on the LAN can
+     * answer) sent the real Mac's token straight to that host on the very next
+     * health probe. Endpoint, pin and token are now one record: change the
+     * identity and the credential goes with it.
      */
     fun applyServeUrl(url: String, token: String? = null, tlsFp: String? = null): Boolean {
         val normalized = ServeClient.normalizeBaseUrl(url.trim())
         if (normalized.isNotBlank() && !ServeClient.isAllowedLanUrl(normalized, _extraCidrs.value)) {
             return false
         }
+        val previousUrl = _serveBaseUrl.value
+        val previousFp = _serveTlsFp.value
+        val newFp = tlsFp?.trim()?.takeIf { it.isNotEmpty() }
+        val addressChanged = previousUrl.isNotBlank() &&
+            normalized.isNotBlank() &&
+            previousUrl != normalized
+        val pinChanged = newFp != null && previousFp != null && previousFp != newFp
+        val identityChanged = addressChanged || pinChanged
+
         _serveBaseUrl.value = normalized
         when {
-            token == null -> { /* keep */ }
+            // A caller that supplies no token is not re-pairing; if the server
+            // it names is a different one, the old credential must not follow.
+            token == null -> if (identityChanged) _serveToken.value = null
             token.isBlank() -> _serveToken.value = null
             else -> _serveToken.value = token.trim()
         }
         when {
-            tlsFp == null -> { /* keep */ }
+            // A new address with no pin supplied invalidates the old pin too —
+            // it belonged to the previous server.
+            tlsFp == null -> if (addressChanged) _serveTlsFp.value = null
             tlsFp.isBlank() -> _serveTlsFp.value = null
             else -> _serveTlsFp.value = tlsFp.trim()
         }

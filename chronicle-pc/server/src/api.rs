@@ -291,12 +291,21 @@ async fn get_legacy() -> Response {
 fn connect_body(state: &App, include_token: bool) -> Value {
     let base = &state.connect_info.base;
     let token = if include_token { state.token.clone() } else { None };
-    let mut qr = json!({"v": 1, "base": base});
+    let v = state.connect_info.version;
+    let mut qr = json!({"v": v, "base": base});
     if let Some(t) = &token {
         qr["token"] = json!(t);
     }
+    // The pin is public by construction (it is the server's own public key
+    // hash) and is useless without the token, so it is safe to hand to a
+    // non-loopback caller — and necessary, since that caller must verify us.
+    if let Some(fp) = &state.connect_info.tls_fp {
+        qr["tls_fp"] = json!(fp);
+    }
     json!({
-        "v": 1,
+        "v": v,
+        "tls": state.connect_info.tls,
+        "tls_fp": state.connect_info.tls_fp,
         "host": state.connect_info.host,
         "port": state.connect_info.port,
         "bind_host": state.connect_info.bind_host,

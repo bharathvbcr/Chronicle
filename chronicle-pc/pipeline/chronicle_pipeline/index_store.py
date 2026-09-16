@@ -61,6 +61,22 @@ def _connect(root: Path) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_sealed_column(conn: sqlite3.Connection) -> bool:
+    """Add the `sealed` column if absent. True when it already existed.
+
+    Added 2026-09 so a locked vault can drop plaintext derived from E2EE
+    entries without re-reading every entry file. There is no migration
+    framework here, so this is idempotent and called from both the indexer and
+    the read boundaries.
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)")}
+    if "sealed" in cols:
+        return True
+    conn.execute("ALTER TABLE documents ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0")
+    conn.commit()
+    return False
+
+
 def _init_schema(conn: sqlite3.Connection, *, use_vec: bool) -> None:
     conn.executescript(
         """
@@ -81,6 +97,7 @@ def _init_schema(conn: sqlite3.Connection, *, use_vec: bool) -> None:
         CREATE INDEX IF NOT EXISTS idx_documents_kind ON documents(kind);
         """
     )
+    _ensure_sealed_column(conn)
     if use_vec:
         # Best-effort vec0 virtual table; ignore if already exists / unsupported
         try:
@@ -109,6 +126,7 @@ def _upsert_doc(
     force: bool,
     use_vec: bool,
     hash_source: str | None = None,
+    sealed: bool = False,
 ) -> str:
     """Return 'upserted' | 'skipped'.
 
@@ -148,10 +166,19 @@ def _upsert_doc(
     conn.execute(
         """
         INSERT OR REPLACE INTO documents
-        (id, kind, path, text, content_hash, embed_model, embedding_json, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        (id, kind, path, text, content_hash, embed_model, embedding_json, updated_at, sealed)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
         """,
-        (doc_id, kind, path, text[:DOC_TEXT_STORE_LIMIT], ch, embed_model, emb_json),
+        (
+            doc_id,
+            kind,
+            path,
+            text[:DOC_TEXT_STORE_LIMIT],
+            ch,
+            embed_model,
+            emb_json,
+            1 if sealed else 0,
+        ),
     )
     if use_vec and emb:
         try:
@@ -317,9 +344,11 @@ def run_index(
 
     for e in entries:
         if e2ee.entry_locked(e, root):
-            # Locked ciphertext must not become an embeddable document.
+            # Locked ciphertext must not become an embeddable document — and
+            # any row indexed during an earlier unlocked window must NOT be
+            # kept alive here. Leaving it in live_ids exempted it from the
+            # stale sweep below, so decrypted text survived the lock.
             skipped += 1
-            live_ids.add(e.id)
             continue
         text, path_hint = _entry_index_text(root, e, journal_bodies)
         live_ids.add(e.id)
@@ -334,6 +363,9 @@ def run_index(
             existing=existing,
             force=force,
             use_vec=use_vec,
+            # Unlocked right now, but the source is ciphertext at rest: flag it
+            # so locking (or a restart) can drop the plaintext copy.
+            sealed=e2ee.entry_is_encrypted(e),
         )
         if result == "upserted":
             upserted += 1
@@ -494,6 +526,44 @@ def _embed_dim(conn: sqlite3.Connection) -> int:
     return EMBED_DIM_HINT
 
 
+def drop_sealed_if_locked(conn: sqlite3.Connection, root: Path) -> int:
+    """Delete plaintext rows derived from sealed entries while the vault is locked.
+
+    A process restart clears the in-memory key but left the index untouched, so
+    text decrypted during an earlier unlocked window stayed searchable — and
+    stayed on disk — without the passphrase. Every read boundary calls this, so
+    the guarantee does not depend on a lock endpoint having been invoked.
+    Deleting rather than filtering also removes the stale copy at rest.
+    """
+    from . import e2ee as e2ee_mod
+
+    if e2ee_mod.load_e2ee_config(root) is None:
+        return 0  # vault never opted in
+    if e2ee_mod.is_unlocked(root):
+        return 0  # caller holds the key; sealed rows are legitimately readable
+    if not _ensure_sealed_column(conn):
+        # Index predates the flag, so every row reads as unsealed and the cheap
+        # query would silently purge nothing. Fall back to the authoritative
+        # entry-file scan rather than failing open.
+        log.info("Index predates the sealed flag; falling back to a full locked-entry purge")
+        return purge_locked_entries(root)
+    try:
+        ids = [r[0] for r in conn.execute("SELECT id FROM documents WHERE sealed = 1")]
+        if not ids:
+            return 0
+        conn.execute("DELETE FROM documents WHERE sealed = 1")
+        try:
+            conn.executemany("DELETE FROM vec_documents WHERE id = ?", [(i,) for i in ids])
+        except sqlite3.Error:
+            pass
+        conn.commit()
+        log.info("Dropped %d sealed index rows (vault is locked)", len(ids))
+        return len(ids)
+    except sqlite3.Error as e:
+        log.warning("Could not drop sealed index rows: %s", e)
+        return 0
+
+
 def search(
     chronicle_dir: Path | str | None,
     query: str,
@@ -536,6 +606,7 @@ def search(
 
     conn = _connect(root)
     try:
+        drop_sealed_if_locked(conn, root)
         q_emb = ollama_mod.try_embed(query, model=cfg.models.embed) if ollama_mod.ollama_reachable() else []
 
         # Prefer sqlite-vec KNN when the extension and virtual table are available.
@@ -626,6 +697,7 @@ def get_documents_by_ids(
     limit = None if text_limit is None else max(0, int(text_limit))
     conn = _connect(root)
     try:
+        drop_sealed_if_locked(conn, root)
         placeholders = ",".join("?" * len(wanted))
         rows = list(
             conn.execute(

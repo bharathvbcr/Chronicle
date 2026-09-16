@@ -35,6 +35,7 @@ fn process_entry(
     entry: &mut Entry,
     image_captions: &mut HashMap<String, String>,
     provider: Option<&dyn ChatProvider>,
+    vision_provider: Option<&dyn ChatProvider>,
     vision_model: &str,
     dry_run: bool,
 ) -> bool {
@@ -102,7 +103,7 @@ fn process_entry(
             image_captions.insert(img.clone(), String::new());
             continue;
         }
-        let desc = match provider {
+        let desc = match vision_provider {
             Some(p) => crate::provider::try_chat_image(p, &ip),
             None => None,
         }
@@ -155,6 +156,9 @@ fn run_process_inner(
     };
     let built = crate::provider::build_provider(&cfg).ok();
     let provider: Option<&dyn ChatProvider> = built.as_ref().map(|(_, p)| p.as_ref());
+    // Separate gate: cloud text consent does not authorize uploading photos.
+    let built_vision = crate::provider::build_vision_provider(&cfg).ok();
+    let vision_provider: Option<&dyn ChatProvider> = built_vision.as_ref().map(|(_, p)| p.as_ref());
 
     let mut unprocessed = store::load_unprocessed(root)?;
     let mut image_captions = captions::load_captions(root);
@@ -180,6 +184,7 @@ fn run_process_inner(
             entry,
             &mut image_captions,
             provider,
+            vision_provider,
             &cfg.models.vision,
             dry_run,
         );

@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Exclude vault URI and LAN pairing secrets from Auto Backup. -->
+<!--
+  Keep capture content and LAN pairing secrets out of Auto Backup.
+
+  sharedpref: vault URI + pairing token / TLS pin / API keys, and the E2EE KDF
+  params and pending-capture queue (chronicle_secure_prefs).
+  file: the LAN outbox holds queued capture JSON, and pending_media holds
+  staged attachment bytes for captures awaiting an unlock — both are capture
+  content living outside the vault, so neither belongs in a cloud backup.
+-->
 <full-backup-content>
     <exclude domain="sharedpref" path="chronicle_prefs.xml" />
     <exclude domain="sharedpref" path="chronicle_secure_prefs.xml" />
+    <exclude domain="file" path="lan_outbox.jsonl" />
+    <exclude domain="file" path="pending_media" />
 </full-backup-content>

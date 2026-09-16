@@ -33,11 +33,35 @@ class QuickCaptureWorker(
             val repo = VaultRepository(applicationContext, treeUri)
             val now = ZonedDateTime.now()
             val id = generateEntryId(now, exists = { repo.entryFileExists(it) })
-            // Seal when e2ee is on + unlocked; locked sessions save plaintext
-            // ("capture always wins") — serializeEntry keeps the invariant.
             val manager = com.chronicle.app.e2ee.E2eeManager
             val sealedBlob =
                 if (manager.enabled.value) manager.sealText(text) else null
+            if (manager.enabled.value && sealedBlob == null) {
+                // Encrypted vault, no key this session. Park it sealed at rest
+                // instead of writing plaintext the user asked us to encrypt;
+                // MainViewModel.flushPendingCaptures files it on unlock.
+                val parked = com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(
+                    applicationContext,
+                    org.json.JSONObject()
+                        .put("id", id)
+                        .put("ts", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+                        .put("type", inputData.getString(KEY_TYPE) ?: "log")
+                        .put("text", text)
+                        .put(
+                            "tags",
+                            org.json.JSONArray(
+                                inputData.getStringArray(KEY_TAGS)?.toList().orEmpty(),
+                            ),
+                        )
+                        .put("images", org.json.JSONArray())
+                        .put("audio", org.json.JSONArray())
+                        .apply {
+                            inputData.getInt(KEY_MOOD, 0).takeIf { it in 1..5 }
+                                ?.let { put("mood", it) }
+                        },
+                )
+                return if (parked) Result.success() else retryOrFail()
+            }
             val entry = Entry(
                 id = id,
                 ts = now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
@@ -86,6 +110,27 @@ class QuickCaptureWorker(
         ) {
             val trimmed = text.trim()
             if (trimmed.isEmpty()) return
+            // WorkManager input is persisted to its own database. For an
+            // encrypted vault that is a second plaintext copy outside the
+            // vault, written before the worker ever gets a chance to seal —
+            // so park it now and skip the worker entirely.
+            val manager = com.chronicle.app.e2ee.E2eeManager
+            if (manager.enabled.value && !manager.unlocked.value) {
+                val now = ZonedDateTime.now()
+                com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(
+                    context.applicationContext,
+                    org.json.JSONObject()
+                        .put("id", generateEntryId(now, exists = { false }))
+                        .put("ts", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+                        .put("type", type)
+                        .put("text", trimmed)
+                        .put("tags", org.json.JSONArray(tags))
+                        .put("images", org.json.JSONArray())
+                        .put("audio", org.json.JSONArray())
+                        .apply { mood?.takeIf { it in 1..5 }?.let { put("mood", it) } },
+                )
+                return
+            }
             val request = OneTimeWorkRequestBuilder<QuickCaptureWorker>()
                 .setInputData(
                     workDataOf(

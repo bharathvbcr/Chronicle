@@ -13,6 +13,7 @@ from typing import Any
 from .entries import entry_path, save_entry
 from .models import Entry
 from .paths import resolve_chronicle_dir
+from .vault_paths import validate_media_rel_pattern
 
 log = logging.getLogger("chronicle.import_legacy")
 
@@ -62,19 +63,30 @@ def convert_legacy_entry(raw: dict[str, Any], *, device: str = "an") -> Entry:
     for img in raw.get("images") or raw.get("photos") or []:
         img = str(img)
         if img.startswith("img/"):
-            images.append(img)
+            candidate = img
         elif "/" in img:
-            images.append(img if img.startswith("img/") else f"img/{img}")
+            candidate = img if img.startswith("img/") else f"img/{img}"
         else:
             # Remap flat image name into shard from new id
             yyyy, mm = new_id[:4], new_id[5:7]
-            images.append(f"img/{yyyy}/{mm}/{img}")
+            candidate = f"img/{yyyy}/{mm}/{img}"
+        # An imported bundle is untrusted input: a reference like
+        # "img/../../../.config/foo" would otherwise be joined onto the vault
+        # root and written outside it. Drop the reference, keep the entry.
+        try:
+            images.append(validate_media_rel_pattern(candidate, kind="img"))
+        except ValueError as e:
+            log.warning("Dropping unsafe image reference in %s: %s", new_id, e)
 
     audio = []
     for a in raw.get("audio") or []:
         a = str(a)
-        if a.startswith("audio/"):
-            audio.append(a)
+        if not a.startswith("audio/"):
+            continue
+        try:
+            audio.append(validate_media_rel_pattern(a, kind="audio"))
+        except ValueError as e:
+            log.warning("Dropping unsafe audio reference in %s: %s", new_id, e)
 
     mood = raw.get("mood")
     if mood is not None:
@@ -154,6 +166,48 @@ def run_import_legacy(
     }
 
 
+def _safe_dest(root: Path, rel: str, *, kind: str) -> Path | None:
+    """
+    Absolute destination for an imported media file, or None if it escapes.
+
+    The copier re-checks containment rather than trusting the reference it was
+    handed: this is the operation that actually writes, and a symlinked parent
+    can move the target even when the string itself is clean.
+    """
+    try:
+        cleaned = validate_media_rel_pattern(rel, kind=kind)
+    except ValueError as e:
+        log.warning("Refusing unsafe media destination %r: %s", rel, e)
+        return None
+    base = root.resolve()
+    dest = (root / cleaned).resolve()
+    if not dest.is_relative_to(base):
+        log.warning("Refusing media destination outside vault: %r", rel)
+        return None
+    # Resolve the nearest existing ancestor too — a symlinked parent directory
+    # escapes even when the joined path looks contained.
+    parent = dest.parent
+    while not parent.exists() and parent != base and base in parent.parents:
+        parent = parent.parent
+    if parent.exists() and not parent.resolve().is_relative_to(base):
+        log.warning("Refusing media destination via symlinked parent: %r", rel)
+        return None
+    return dest
+
+
+def _copy_one(legacy_root: Path, root: Path, rel: str, *, kind: str, sources: tuple[str, ...]) -> None:
+    dest = _safe_dest(root, rel, kind=kind)
+    if dest is None or dest.exists():
+        return
+    name = Path(rel).name
+    for sub in sources:
+        cand = legacy_root / sub / name if sub else legacy_root / name
+        if cand.is_file():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cand, dest)
+            return
+
+
 def _copy_legacy_media(
     legacy_root: Path,
     root: Path,
@@ -161,30 +215,6 @@ def _copy_legacy_media(
     entry: Entry,
 ) -> None:
     for rel in entry.images:
-        dest = root / rel
-        if dest.exists():
-            continue
-        # Try flat img/ or images/
-        name = Path(rel).name
-        for cand in (
-            legacy_root / "img" / name,
-            legacy_root / "images" / name,
-            legacy_root / name,
-        ):
-            if cand.is_file():
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(cand, dest)
-                break
+        _copy_one(legacy_root, root, rel, kind="img", sources=("img", "images", ""))
     for rel in entry.audio or []:
-        dest = root / rel
-        if dest.exists():
-            continue
-        name = Path(rel).name
-        for cand in (
-            legacy_root / "audio" / name,
-            legacy_root / name,
-        ):
-            if cand.is_file():
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(cand, dest)
-                break
+        _copy_one(legacy_root, root, rel, kind="audio", sources=("audio", ""))

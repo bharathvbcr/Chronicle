@@ -51,6 +51,16 @@ warn() {
   echo "WARN: $*" >&2
 }
 
+# `adb shell ARG...` does NOT preserve argument boundaries: the device joins the
+# args and its own shell re-parses the result. Every dynamic value placed into a
+# remote command must therefore be quoted for that remote shell, not just this
+# one. A vault filename containing a single quote would otherwise close the
+# quoting and run the rest as commands on the phone.
+shq() {
+  local s=${1//\'/\'\\\'\'}
+  printf "'%s'" "$s"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --phone-dir)
@@ -203,7 +213,7 @@ PHONE_DIR=""
 
 phone_dir_looks_like_vault() {
   local dir="$1"
-  adb shell "test -f '$dir/config.json' && { test -d '$dir/_capture' || test -d '$dir/40-Journal'; }" \
+  adb shell "test -f $(shq "$dir/config.json") && { test -d $(shq "$dir/_capture") || test -d $(shq "$dir/40-Journal"); }" \
     >/dev/null 2>&1
 }
 
@@ -242,7 +252,7 @@ print("/sdcard/" + rel if rel else "/sdcard")
 '
   )" || return 1
   [[ -n "$path" ]] || return 1
-  if adb shell "test -d '$path'" >/dev/null 2>&1; then
+  if adb shell "test -d $(shq "$path")" >/dev/null 2>&1; then
     echo "$path"
     return 0
   fi
@@ -286,11 +296,11 @@ resolve_phone_dir() {
   fi
 
   # Explicit paths: ensure dir exists (create) or already looks usable.
-  if ! adb shell "test -d '$PHONE_DIR'" >/dev/null 2>&1; then
+  if ! adb shell "test -d $(shq "$PHONE_DIR")" >/dev/null 2>&1; then
     if [[ "$DRY_RUN" -eq 1 ]]; then
       warn "phone dir does not exist yet (would mkdir -p): $PHONE_DIR"
     else
-      adb shell "mkdir -p '$PHONE_DIR'" >/dev/null
+      adb shell "mkdir -p $(shq "$PHONE_DIR")" >/dev/null
     fi
   fi
   ok "PHONE_DIR=$PHONE_DIR"
@@ -316,7 +326,7 @@ mac_md5() {
 phone_md5() {
   local f="$1"
   # toybox md5sum on device
-  adb shell "md5sum '$f' 2>/dev/null" | tr -d '\r' | awk '{print $1}'
+  adb shell "md5sum $(shq "$f") 2>/dev/null" | tr -d '\r' | awk '{print $1}'
 }
 
 build_ustar() {
@@ -348,10 +358,10 @@ if [[ "$SKIP_PUSH" -eq 0 ]]; then
     ok "dry-run — skipping adb push/extract"
   else
     warn "pause Syncthing on Mac and phone during this push to avoid races"
-    adb shell "mkdir -p '$PHONE_DIR'" >/dev/null
+    adb shell "mkdir -p $(shq "$PHONE_DIR")" >/dev/null
     adb push "$LOCAL_TAR" "$REMOTE_TAR" >/dev/null
     # Merge extract only — never delete phone-only files.
-    adb shell "tar -xf '$REMOTE_TAR' -C '$PHONE_DIR' && rm -f '$REMOTE_TAR'"
+    adb shell "tar -xf $(shq "$REMOTE_TAR") -C $(shq "$PHONE_DIR") && rm -f $(shq "$REMOTE_TAR")"
     ok "merge-extracted ustar into $PHONE_DIR"
 
     # Verify: spot MD5s
@@ -373,12 +383,21 @@ if [[ "$SKIP_PUSH" -eq 0 ]]; then
     sample="$(
       python3 -c '
 from pathlib import Path
+import re
 import sys
 root = Path(sys.argv[1])
 journal = root / "40-Journal"
 if not journal.is_dir():
     raise SystemExit(0)
-files = sorted(p for p in journal.rglob("*.md") if p.is_file())
+# Defence in depth: only ever sample a canonical journal day file. A synced or
+# imported file is untrusted input, and its name ends up in a remote command.
+DAY = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
+SEG = re.compile(r"^[A-Za-z0-9._-]+$")
+def safe(p):
+    rel = p.relative_to(root)
+    parts = rel.parts
+    return DAY.match(parts[-1]) and all(SEG.match(x) and x not in (".", "..") for x in parts)
+files = sorted(p for p in journal.rglob("*.md") if p.is_file() and safe(p))
 if files:
     print(files[-1].relative_to(root))
 ' "$CHRONICLE_DIR"

@@ -89,6 +89,7 @@ pub mod provider;
 pub mod rag;
 pub mod serve;
 pub mod timeutil;
+pub mod tls;
 pub mod transcribe;
 pub mod upcoming;
 pub mod vertex;
@@ -131,6 +132,12 @@ pub struct ConnectInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     pub auth_required: bool,
+    /// True when the listener terminates TLS (LAN mode).
+    #[serde(default)]
+    pub tls: bool,
+    /// base64 SHA-256 of the cert SPKI — the phone pins this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls_fp: Option<String>,
 }
 
 /// Sliding-window cloud rate limiter state (20 req / 60 s across ask/recall/resume).

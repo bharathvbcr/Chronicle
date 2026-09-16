@@ -1,6 +1,6 @@
 # Prompt for Claude Code — Second Brain Vault Setup (skill-based architecture)
 
-> **Chronicle users:** This prompt is inspiration for a generic Obsidian vault. For the live Chronicle product, follow [`chronicle-pc/CONTRACT.md`](chronicle-pc/CONTRACT.md) and seed structure with `chronicle init-vault-structure` (idempotent, create-only).
+> **Chronicle users:** This prompt is inspiration for a generic Obsidian vault. For the live Chronicle product, follow [`chronicle-pc/CONTRACT.md`](chronicle-pc/CONTRACT.md) and seed structure with the Python CLI (`chronicle-pc/.venv/bin/chronicle init-vault-structure`) (idempotent, create-only).
 
 Copy everything below this line and paste it into Claude Code, run from an empty folder where you want the vault to live.
 

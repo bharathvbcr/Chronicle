@@ -1,49 +1,51 @@
-# Chronicle (Android)
+# Chronicle for Android
 
-Capture-first personal journal for Android. Writes entry JSON + media into a user-picked Syncthing folder via Storage Access Framework. Optional LAN to Mac `chronicle serve` for Recall/Ask/Resume. Optional LLM: on-device Gemini Nano | Ollama LAN (private hosts) | Grok BYOK — secrets in EncryptedSharedPreferences; cloud requires consent. Intelligence for full vault RAG prefers the Mac. See [`CONTRACT.md`](CONTRACT.md).
+Capture text, photos, and voice into a user-selected folder. Browse synced Timeline, Notes, and Brain while offline; pair with the Mac for full-vault recall and supported API operations.
 
-**End-to-end setup:** [`../docs/SETUP.md`](../docs/SETUP.md) · workspace overview: [`../README.md`](../README.md).
+[Setup](../docs/SETUP.md) · [Architecture](../docs/ARCHITECTURE.md) · [Contract v1.11](CONTRACT.md)
 
-**Toolchain:** Cursor + DevCouncil + Android SDK command-line tools + Gradle (CLI-only).
+## First run
 
----
+1. Install a source-built APK.
+2. Select the Syncthing-shared Chronicle data folder with the system folder picker; grant persistent access.
+3. Save a text entry. Current captures use `_capture/entries/` and `_attachments/`.
+4. Wait for Syncthing, run `process` on the Mac, then wait for the filed journal and Brain to sync back.
+5. Optionally scan the Mac's connection QR in Settings for LAN features.
 
-## First run (user)
+A paired connection is not a complete folder-sync check. If the app loses storage access, re-pick the folder. Current processing uses vault layout **2**; use matching PC and Android builds when migrating an existing vault.
 
-1. Install the APK (see [Build & run](#build--run)).
-2. On welcome, pick the **Syncthing-synced Chronicle folder** (`OpenDocumentTree`).
-3. Capture text / camera / gallery / voice — at `layout_version: 2` files go under `_capture/entries/` and `_attachments/` (legacy `entries/` / `img/` / `audio/` still dual-read).
-4. After the Mac runs `chronicle process` and Syncthing syncs, Timeline / Notes / Brain read vault data offline (filed prose in `40-Journal/`).
-5. **Notes** has three sections matching PC: Knowledge Base (`30-Knowledge/`), Notes (`00-Inbox/` / `10-Work/` / `20-Personal/` / `90-Archive/`), and Journal. Journal day fences amend only via LAN `PATCH` when Mac serve is healthy — never SAF writes into `40-Journal/`. Accept disk resolves fence conflicts over LAN. Derived/`Upcoming.md` are read-only. Co-release with PC CONTRACT **v1.10** (PARA-only; no legacy `kb/notes` dual-read).
+## Screens and storage
 
-If writes fail or the vault looks empty after an OS upgrade, **re-pick the folder** so SAF persistable permission is restored.
+| Screen | Purpose |
+| --- | --- |
+| Capture | Text, type, mood, tags, photo and voice input |
+| Timeline | Day-grouped entries, search/filter, edits to unprocessed captures |
+| Notes | Editable PARA notes and knowledge; journal browsing and LAN amendments |
+| Brain | Offline graph and local browsing, optional Mac recall |
+| Portfolio | Resume points from `10-Work/ResumePoints/` |
+| Settings | Vault selection, pairing, theme, Health Connect, provider/consent settings |
 
-Co-release this APK with PC CLI builds that require `layout_version: 2`.
+Knowledge Base maps to `30-Knowledge/`. Notes maps to `00-Inbox/`, `10-Work/`, `20-Personal/`, and `90-Archive/`. Journal uses `40-Journal/` plus generated aggregates. Journal fence amendments go through the Mac API; Android does not rewrite journal files directly through SAF. Derived content and `Upcoming.md` are read-only. Legacy `kb/notes/` is retired.
 
----
+The app uses SAF rather than a separate capture database. The Mac owns processing/filed state after creation. Brain user edits are per-device curation operations; the Mac produces the derived graph.
 
-## DevCouncil
+## Build
 
-This repo is DevCouncil-managed. Evidence, not model confidence, decides when work is done.
+Use JDK 21, the Android SDK required by [app/build.gradle.kts](app/build.gradle.kts), and the checked-in Gradle wrapper. The current configuration declares compile SDK 36 with minor API level 1, target SDK 36, and minimum SDK 26. Treat those as build settings, not a tested-device list.
+
+From this directory:
 
 ```bash
-# From chronicle-android/ (this directory)
-dev status
-dev map "Chronicle Android capture journal"   # refresh .devcouncil/repo_map.json
-dev plan "…"                                  # gated plan → tasks
-dev tasks
-dev prompt TASK-001                           # paste into Cursor / coding CLI
-dev verify TASK-001
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.chronicle.app/.MainActivity
 ```
 
-| Artifact | Purpose |
-| --- | --- |
-| [`.devcouncil/repo_map.json`](.devcouncil/repo_map.json) | Primary file index — open before guessing paths |
-| [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) | Agent workspace guide (regenerated by `dev map`) |
-| [`.devcouncil/config.yaml`](.devcouncil/config.yaml) | Gates + verify commands (`lint` / `test` / `compileDebugKotlin`) |
-| [`CONTRACT.md`](CONTRACT.md) | Frozen folder layout + entry schema (shared with PC) |
+Or install through `./gradlew :app:installDebug`. Configure the SDK locally; do not commit machine-specific settings or credentials.
 
-Verify commands (configured):
+Release builds require the locally provisioned `keystore.properties`. The Gradle configuration fails release tasks when it is absent; there is no debug-signing fallback for a release. Do not publish a debug APK as a signed production release.
+
+## Verification
 
 ```bash
 ./gradlew :app:lintDebug
@@ -51,127 +53,16 @@ Verify commands (configured):
 ./gradlew :app:compileDebugKotlin
 ```
 
----
+These commands do not establish physical camera/microphone behavior, Health Connect permission flows, storage-provider atomicity, Syncthing delivery, or live certificate pairing. Exercise those on devices separately.
 
-## Dev map (source layout)
+## AI and network boundaries
 
-```
-chronicle-android/
-├── CONTRACT.md                 # frozen folder + entry schema
-├── contract/                   # JSON Schema (byte-identical with PC)
-├── README.md                   # this file
-├── AGENTS.md / CLAUDE.md       # DevCouncil agent guides
-├── .devcouncil/                # config, repo_map, state, logs
-├── settings.gradle.kts         # root project "Chronicle", :app
-├── build.gradle.kts
-├── gradle.properties
-├── gradle/libs.versions.toml   # AGP 9.1.1, Kotlin 2.2, Compose BOM
-├── local.properties            # sdk.dir (gitignored)
-│
-└── app/
-    ├── build.gradle.kts        # applicationId com.chronicle.app
-    └── src/main/
-        ├── AndroidManifest.xml
-        ├── java/com/example/   # (and com.chronicle.app packages)
-        │   ├── MainActivity / Capture / Timeline / Notes / Brain / Portfolio / Settings
-        │   ├── VaultRepository / SafStorage
-        │   ├── brain/ / health/ / widget/ / reminder/ / share/ / net/ / ai/
-        │   └── ui/theme/
-        └── res/
-```
+On-device Gemini Nano features depend on device/runtime availability. Ollama LAN uses private-host validation; Grok is optional and requires cloud consent, with credentials in protected preferences. Android does not provide the Mac's Vertex adapter. Full-vault Mac recall requires a reachable paired server.
 
-### Screens (`MainViewModel.Screen`)
+Optional entry-text encryption is not whole-vault encryption. Read the [architecture boundaries](../docs/ARCHITECTURE.md#data-and-network-boundaries) and [contract](CONTRACT.md) before configuring it.
 
-| Screen | Role |
-| --- | --- |
-| **FIRST_RUN** | Welcome → `OpenDocumentTree` → persist URI |
-| **CAPTURE** | Text, type, mood, tags, camera/gallery, voice, Save |
-| **TIMELINE** | Day-grouped entries; search/filter; edit unprocessed |
-| **NOTES** | Three sections: Knowledge Base / Notes / Journal (PARA + `40-Journal`; folder tree + cross-section wikilinks) |
-| **BRAIN** | Offline graph + optional LAN recall via Mac serve |
-| **PORTFOLIO** | Resume points from `10-Work/ResumePoints/` |
-| **SETTINGS** | Vault folder, LAN serve QR, theme, Health Connect, LLM provider + consent |
+## Source navigation
 
-### Data flow
+Read [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and `.devcouncil/repo_map.json`. The app lives under `app/src/main/java/com/chronicle/app/`; storage is owned by `VaultRepository` and `SafStorage`, LAN by `net/ServeClient`, cloud by `net/CloudLlmClient`, and on-device AI by `ai/GenAiService`.
 
-1. User picks a Syncthing-synced `Chronicle/` folder (SAF → persisted vault URI).
-2. Save writes `_capture/entries/yyyy/MM/<id>.json` + `_attachments/` (JPEG ≤2560px; AAC voice notes); dual-reads legacy paths.
-3. Timeline / Notes / Brain / Portfolio read vault via SAF (no Room on the capture path).
-4. PC pipeline flips `processed` / `filed` — Android never changes those after create; edit/delete only while `processed=false`.
-5. Optional LAN: Settings QR pairs to Mac `chronicle serve` (`X-Chronicle-Token` when present).
-6. Optional cloud: Grok via `CloudLlmClient` (HTTPS allowlist) after consent; keys in EncryptedSharedPreferences.
-
-### Stack
-
-- Kotlin, Jetpack Compose, Material 3, minSdk 26, single `:app` module
-- SAF for all vault I/O; offline brain render; widget / share / reminders
-
----
-
-## Prerequisites (CLI)
-
-```bash
-brew install --cask android-commandlinetools
-sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-
-# JDK 21 recommended for AGP 9 / compileSdk 36 builds and unit tests
-brew install openjdk@21
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21
-# ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
-```
-
-`local.properties` (gitignored):
-
-```properties
-sdk.dir=/opt/homebrew/share/android-commandlinetools
-```
-
-Gradle wrapper: `./gradlew` (Gradle **9.3.1** for AGP 9.1.1).
-
----
-
-## Build & run
-
-```bash
-./gradlew :app:assembleDebug
-./gradlew :app:installDebug
-
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.chronicle.app/.MainActivity
-```
-
-**Release builds** require `chronicle-android/keystore.properties` (not committed) with `storeFile`, `storePassword`, `keyAlias`, and `keyPassword`. There is no debug-keystore fallback for release — `assembleRelease` / `bundleRelease` fail with a clear error if the file is missing.
-
-```bash
-./gradlew :app:assembleRelease   # needs keystore.properties
-./gradlew :app:testDebugUnitTest
-./gradlew clean
-```
-
-Cleartext HTTP is allowed for private/loopback LAN only; all HTTP clients must pass `ServeClient.isPrivateOrLoopbackUrl` (Serve + Ollama LAN).
-
-Emulator (optional):
-
-```bash
-sdkmanager "system-images;android-36;google_apis;arm64-v8a"
-avdmanager create avd -n chronicle -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_7
-emulator -avd chronicle &
-```
-
----
-
-## Troubleshooting
-
-- **Permission lost / can’t save** — re-pick the Syncthing Chronicle folder so SAF URI permission is persisted again.
-- **Brain / Today empty** — Mac must run `chronicle process` (or `watch`); wait for Syncthing; confirm phone folder is the same share and vault is `layout_version: 2`.
-- **Build fails on Java version** — use JDK 21 (`JAVA_HOME` as above).
-- **Grok / cloud errors** — confirm consent + key in Settings; never put keys in the vault.
-
----
-
-## Related
-
-- [`CONTRACT.md`](CONTRACT.md) — shared data contract (identical with `chronicle-pc/`)
-- PC pipeline + dashboard: [`../chronicle-pc/`](../chronicle-pc/)
-- Full setup: [`../docs/SETUP.md`](../docs/SETUP.md)
-- Sync: Syncthing on `Chronicle/`; ignore `index/`, `*.tmp`, `.DS_Store`, `.stfolder`
+For stale notes, missing audio, pairing failures, or lost SAF access, use [troubleshooting](../docs/OPERATIONS.md#troubleshooting).

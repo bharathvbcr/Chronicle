@@ -184,12 +184,32 @@ class ShareActivity : FragmentActivity() {
                                             val repo = VaultRepository(this@ShareActivity, treeUri)
                                             val now = ZonedDateTime.now()
                                             val id = generateEntryId(now, exists = { repo.entryFileExists(it) })
-                                            // Seal like every other capture path: when E2EE is
-                                            // enabled+unlocked the text never touches disk in the
-                                            // clear; when locked, save plaintext (capture wins)
-                                            // but LanOutboxWorker skips mirroring it.
-                                            val sealedBlob =
-                                                com.chronicle.app.e2ee.E2eeManager.sealText(text)
+                                            // Seal like every other capture path. When E2EE is
+                                            // enabled but this session has no key, park the text
+                                            // sealed at rest instead of writing it in the clear —
+                                            // it is filed on the next unlock.
+                                            val manager = com.chronicle.app.e2ee.E2eeManager
+                                            val sealedBlob = manager.sealText(text)
+                                            if (manager.enabled.value && sealedBlob == null) {
+                                                val staged = imageUris.mapNotNull {
+                                                    com.chronicle.app.e2ee.PendingCaptureQueue
+                                                        .stageMedia(this@ShareActivity, it)
+                                                }
+                                                return@withContext com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(
+                                                    this@ShareActivity,
+                                                    org.json.JSONObject()
+                                                        .put("id", id)
+                                                        .put(
+                                                            "ts",
+                                                            now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                                                        )
+                                                        .put("type", "log")
+                                                        .put("text", text)
+                                                        .put("tags", org.json.JSONArray())
+                                                        .put("images", org.json.JSONArray(staged))
+                                                        .put("audio", org.json.JSONArray()),
+                                                )
+                                            }
                                             val entry = Entry(
                                                 id = id,
                                                 ts = now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),

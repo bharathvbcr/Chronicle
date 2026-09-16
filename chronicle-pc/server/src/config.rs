@@ -315,6 +315,37 @@ pub fn require_layout_version(cfg: &ChronicleConfig) -> Result<i64, ChronicleErr
     Ok(version)
 }
 
+/// True when this vault has opt-in field-level encryption switched on.
+///
+/// The block lands in `extra` because the native config struct does not model
+/// it — which is precisely the problem: unmodelled does not mean inactive.
+pub fn e2ee_enabled(cfg: &ChronicleConfig) -> bool {
+    cfg.extra
+        .get("e2ee")
+        .and_then(|v| v.get("enabled"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Refuse to operate on an encrypted vault.
+///
+/// The native server has no E2EE implementation: no key derivation, no unlock,
+/// no sealing. Serving such a vault anyway meant every capture was written as
+/// plaintext beside the user's ciphertext — silently defeating the protection
+/// they opted into. Until native sealing exists, fail closed and loud.
+pub fn require_no_e2ee(cfg: &ChronicleConfig) -> Result<(), ChronicleError> {
+    if e2ee_enabled(cfg) {
+        return Err(ChronicleError::Layout(
+            "This vault has end-to-end encryption enabled (config.json e2ee.enabled=true), \
+             and the native server cannot read or write sealed entries yet — it would save \
+             new captures as plaintext next to your encrypted ones. Use the Python server \
+             (`chronicle serve` from chronicle-pc) for this vault, or turn E2EE off there first."
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Convenience used by CLI paths where only the dir is known.
 pub fn load_config_resolved(dir: Option<&Path>) -> Result<(std::path::PathBuf, ChronicleConfig), ChronicleError> {
     let root = resolve_chronicle_dir(dir)?;

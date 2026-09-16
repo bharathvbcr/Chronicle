@@ -479,6 +479,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         val scope = rememberCoroutineScope()
                         var discovering by remember { mutableStateOf(false) }
+                        var discoverStatus by remember { mutableStateOf<String?>(null) }
                         Button(
                             onClick = {
                                 discovering = true
@@ -489,10 +490,20 @@ fun SettingsScreen(
                                     }
                                     if (found != null) {
                                         val scheme = if (found.tls) "https" else "http"
+                                        // mDNS is unauthenticated: anyone on this
+                                        // network can answer. Treat the result as an
+                                        // address candidate only and clear the
+                                        // pairing token explicitly, so it can never
+                                        // be presented to whoever replied first.
+                                        // Re-pair by QR to authorise the new host.
                                         applyLanBaseUrl(
                                             "$scheme://${found.host}:${found.port}",
+                                            token = "",
                                             tlsFp = found.tlsFp.takeIf { found.tls },
                                         )
+                                        discoverStatus = "Found ${found.host} — scan the pairing QR on your Mac to finish."
+                                    } else {
+                                        discoverStatus = "No Chronicle Mac found on this network."
                                     }
                                     discovering = false
                                 }
@@ -503,6 +514,15 @@ fun SettingsScreen(
                                 .testTag("settings_lan_discover"),
                         ) {
                             Text(if (discovering) "Searching…" else "Discover Mac on network")
+                        }
+                        discoverStatus?.let {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("settings_lan_discover_status"),
+                            )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
@@ -660,6 +680,20 @@ private fun E2eeSettingsSection(viewModel: MainViewModel) {
             },
         )
         Spacer(modifier = Modifier.height(8.dp))
+        // Captures taken while locked are parked sealed outside the vault; say
+        // so, otherwise they are invisible until the next unlock.
+        val pending = remember(enabled, unlocked, message) {
+            if (enabled) viewModel.pendingCaptureCount(context) else 0
+        }
+        if (pending > 0) {
+            Text(
+                "$pending capture(s) saved while locked — unlock to file them into your vault.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings_e2ee_pending"),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
                 !enabled -> {
