@@ -66,16 +66,14 @@ async function flushConnect() {
 }
 
 describe('useLiveEvents (stream-ticket flow)', () => {
-  let originalEventSource: typeof EventSource | undefined
   let ticketsIssued: string[]
 
   beforeEach(() => {
     vi.useFakeTimers()
-    originalEventSource = global.EventSource
     FakeEventSource.instances = []
     resetVaultBus()
     resetLanAuthTokenCache()
-    ;(global as Record<string, unknown>).EventSource = FakeEventSource
+    vi.stubGlobal('EventSource', FakeEventSource)
 
     ticketsIssued = []
     let n = 0
@@ -88,9 +86,7 @@ describe('useLiveEvents (stream-ticket flow)', () => {
   })
 
   afterEach(() => {
-    if (originalEventSource) {
-      ;(global as Record<string, unknown>).EventSource = originalEventSource
-    }
+    vi.unstubAllGlobals()
     vi.useRealTimers()
     resetVaultBus()
     resetLanAuthTokenCache()
