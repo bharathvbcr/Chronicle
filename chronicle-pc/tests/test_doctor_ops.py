@@ -7,7 +7,6 @@ import os
 import shutil
 from pathlib import Path
 
-import pytest
 from chronicle_pipeline.doctor import run_doctor
 from chronicle_pipeline.index_store import run_index
 

@@ -13,11 +13,7 @@ from zoneinfo import ZoneInfo
 
 from .models import Entry
 from .paths import atomic_write_json, read_json, resolve_chronicle_dir
-from .vault_paths import (
-    capture_entries_dir,
-    entry_candidate_rels,
-    legacy_entries_dir,
-)
+from .vault_paths import entry_candidate_rels, iter_entry_roots
 
 log = logging.getLogger("chronicle.entries")
 
@@ -81,9 +77,14 @@ def _decrypt_entry_inplace(entry: Entry, root: Path | None) -> None:
         # No vault context, or plaintext already populated (nothing to open).
         return
     try:
-        entry.text = e2ee_mod.decrypt_text(entry.text_enc, root)
+        plain = e2ee_mod.open_entry_text(entry, root)
     except e2ee_mod.E2eeError as e:
         log.warning("e2ee decrypt failed for %s (%s); leaving locked", entry.id, e)
+        return
+    if plain is None:
+        log.warning("e2ee entry %s is locked; leaving text empty", entry.id)
+        return
+    entry.text = plain
 
 
 def load_entry(path: Path, root: Path | str | None = None) -> Entry | None:
@@ -117,9 +118,11 @@ def save_entry(
 
     # E2EE invariant: an enabled vault never persists plaintext.
     has_plain = bool((entry.text or "").strip())
-    if has_plain and e2ee_mod.is_unlocked(root):
-        # Covers both resealing edited blobs and first-time sealing of fresh
-        # entries created while encryption is on (e.g. "Add from Mac").
+    if has_plain and e2ee_mod.reseal_entry(entry, root):
+        # Already-encrypted entry: reseal the filled plaintext.
+        pass
+    elif has_plain and e2ee_mod.is_unlocked(root):
+        # First-time seal of a plaintext entry while encryption is on.
         entry.text_enc = e2ee_mod.encrypt_text(root, entry.text)
         entry.text = ""
     elif has_plain and isinstance(getattr(entry, "text_enc", None), dict):
@@ -154,7 +157,7 @@ def iter_entry_paths(root: Path) -> list[Path]:
     """Dual-read capture + legacy; prefer capture when same id exists in both."""
     seen_ids: set[str] = set()
     out: list[Path] = []
-    for base in (capture_entries_dir(root), legacy_entries_dir(root)):
+    for base in iter_entry_roots(root):
         if not base.is_dir():
             continue
         for path in sorted(base.rglob("*.json")):

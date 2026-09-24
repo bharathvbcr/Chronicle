@@ -78,7 +78,9 @@ def default_e2ee_block(passphrase: str) -> dict[str, Any]:
 
 def load_e2ee_config(root: Path | str | None = None) -> dict[str, Any] | None:
     """Return the ``e2ee`` config block, or None when absent/malformed."""
-    cfg_path = resolve_chronicle_dir(root) / "config.json"
+    from .config import config_path
+
+    cfg_path = config_path(root)
     if not cfg_path.exists():
         return None
     try:
@@ -98,7 +100,9 @@ def load_e2ee_config(root: Path | str | None = None) -> dict[str, Any] | None:
 
 
 def save_e2ee_config(block: dict[str, Any], root: Path | str | None = None) -> Path:
-    cfg_path = resolve_chronicle_dir(root) / "config.json"
+    from .config import config_path
+
+    cfg_path = config_path(root)
     raw = read_json(cfg_path) if cfg_path.exists() else {}
     raw["e2ee"] = block
     atomic_write_json(cfg_path, raw)

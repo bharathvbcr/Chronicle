@@ -12,6 +12,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from .vault_paths import machine_exclude_dirs
+
 # Preferred knowledge layout (PARA). Numbers keep sort order in file browsers.
 PARA_AREAS: tuple[str, ...] = (
     "00-Inbox",
@@ -35,17 +37,7 @@ VALID_SECTIONS: frozenset[str] = frozenset({SECTION_KB, SECTION_NOTES})
 CHROME_BASENAMES: frozenset[str] = frozenset({"CLAUDE.md", ".gitkeep", "README.md"})
 
 # Machine / regenerable dirs — Obsidian should exclude these when opening vault root.
-MACHINE_EXCLUDE_DIRS: tuple[str, ...] = (
-    "index",
-    "brain",
-    "_capture",
-    "_attachments",
-    "entries",
-    "img",
-    "audio",
-    ".stfolder",
-    "_staging",
-)
+MACHINE_EXCLUDE_DIRS: tuple[str, ...] = machine_exclude_dirs()
 
 _SAFE_REL = re.compile(r"^[A-Za-z0-9._\- /]+$")
 _FORBIDDEN = ("..", "\0")
@@ -120,7 +112,7 @@ def assert_path_allowed_for_section(rel: str, section: str | None) -> None:
     section = validate_section(section)
     if section is None:
         return
-    if section_for(rel) != section:
+    if not path_allowed_for_section(rel, section):
         raise ValueError(
             f"path {rel!r} is outside section {section!r} "
             f"(kb → {KB_AREA}/; notes → Inbox/Work/Personal/Archive)"
@@ -134,8 +126,7 @@ def para_area_roots(root: Path) -> list[Path]:
 def knowledge_roots(root: Path, *, existing_only: bool = True) -> list[Path]:
     """Roots to scan for knowledge markdown (PARA only)."""
     roots: list[Path] = []
-    for area in PARA_AREAS:
-        p = root / area
+    for p in para_area_roots(root):
         if not existing_only or p.is_dir():
             roots.append(p)
     return roots
@@ -336,10 +327,7 @@ def iter_knowledge_md(root: Path) -> Iterator[tuple[str, Path]]:
     """Yield (vault_rel, abs_path) for all PARA knowledge .md files."""
     seen_rels: set[str] = set()
 
-    for area in PARA_AREAS:
-        base = root / area
-        if not base.is_dir():
-            continue
+    for base in knowledge_roots(root):
         for path in sorted(base.rglob("*.md")):
             if path.name.startswith(".") or ".sync-conflict" in path.name:
                 continue

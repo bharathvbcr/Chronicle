@@ -70,6 +70,9 @@ def test_rotate_cli_round_trip(tmp_path, monkeypatch) -> None:
     _save(tmp_path, entry)
     e2ee.lock(tmp_path)
 
+    import getpass as _getpass
+
+    monkeypatch.setattr(_getpass, "getpass", lambda *a, **k: "")
     monkeypatch.setenv("CHRONICLE_E2EE_OLD_PASSPHRASE", PASS)
     rc = cli.main(
         [

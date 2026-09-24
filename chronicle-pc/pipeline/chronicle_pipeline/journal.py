@@ -17,7 +17,7 @@ from .entries import entry_day, entry_path, load_entry, save_entry
 from .lock import vault_process_lock
 from .models import Entry
 from .paths import atomic_write_text, content_hash
-from .vault_paths import JOURNAL_DIR, journal_day_path
+from .vault_paths import JOURNAL_DIR
 
 log = logging.getLogger("chronicle.journal")
 
@@ -183,7 +183,9 @@ def upsert_entry_block(
     """
     day = day or entry_day(entry)
     rel = f"{JOURNAL_DIR}/{day.isoformat()}.md"
-    path = journal_day_path(root, day.isoformat())
+    from .notes import journal_path
+
+    path = journal_path(root, day)
     body = render_entry_block_body(entry, image_captions=image_captions)
     new_hash = content_hash(body)
     fence = wrap_entry_fence(entry.id, body)

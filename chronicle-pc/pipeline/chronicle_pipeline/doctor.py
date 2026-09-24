@@ -10,7 +10,6 @@ import re
 import shutil
 import sqlite3
 import time
-
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +18,13 @@ from . import path_map
 from .entries import ID_RE, load_all_entries, load_entry
 from .journal import detect_journal_hash_mismatches, get_filed, is_file_ready
 from .paths import resolve_chronicle_dir
-from .vault_paths import JOURNAL_DIR, capture_entries_dir, legacy_entries_dir
-
+from .vault_paths import (
+    JOURNAL_DIR,
+    attachments_dir,
+    capture_entries_dir,
+    derived_path,
+    legacy_entries_dir,
+)
 
 log = logging.getLogger("chronicle.doctor")
 
@@ -352,10 +356,10 @@ def run_doctor(
     else:
         if layout_version >= 2:
             required = [
-                root / "_capture" / "entries",
-                root / "_attachments",
-                root / "_system" / "derived",
-                root / "40-Journal",
+                capture_entries_dir(root),
+                attachments_dir(root),
+                derived_path(root),
+                root / JOURNAL_DIR,
             ]
             missing = [str(p.relative_to(root)) for p in required if not p.is_dir()]
             if missing:
@@ -486,7 +490,7 @@ def run_doctor(
                         max_dt = datetime.datetime.fromisoformat(max_updated_at_str.replace(" ", "T"))
                         if newest_mtime > max_dt.timestamp() + 1.0:
                             is_stale = True
-                    except Exception:
+                    except (ValueError, TypeError):
                         pass
                 elif knowledge_notes:
                     is_stale = True

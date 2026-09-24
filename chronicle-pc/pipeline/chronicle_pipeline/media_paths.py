@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .vault_paths import resolve_media_abs, validate_media_rel_pattern
+from .vault_paths import (
+    is_attachment_media,
+    is_legacy_media,
+    resolve_media_abs,
+    validate_media_rel_pattern,
+)
 
 
 class MediaPathError(ValueError):
@@ -40,11 +45,13 @@ def validate_media_rel(root: Path, rel: str, *, kind: str) -> Path:
 def safe_media_path(root: Path, rel: str) -> Path:
     """Resolve media under vault (attachments or legacy img/audio)."""
     cleaned = normalize_media_rel(rel)
-    if cleaned.startswith("audio/") or (
-        cleaned.startswith("_attachments/") and cleaned.endswith(".m4a")
+    legacy = is_legacy_media(cleaned)
+    attached = is_attachment_media(cleaned)
+    if (legacy and cleaned.startswith("audio/")) or (
+        attached and cleaned.endswith(".m4a")
     ):
         return validate_media_rel(root, cleaned, kind="audio")
-    if cleaned.startswith("img/") or cleaned.startswith("_attachments/"):
+    if (legacy and cleaned.startswith("img/")) or attached:
         return validate_media_rel(root, cleaned, kind="img")
     raise MediaPathError(
         f"media path must be under _attachments/, img/, or audio/: {rel}"

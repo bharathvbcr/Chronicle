@@ -76,10 +76,12 @@ def legacy_media_rel(kind: str, yyyy: str, mm: str, file_name: str) -> str:
 def media_rewrite_legacy_to_attachments(rel: str) -> str:
     """Map img/… or audio/… → _attachments/… (same yyyy/MM/basename)."""
     p = _norm(rel)
-    if p.startswith("img/"):
-        return f"{ATTACHMENTS}/{p[len('img/') :]}"
-    if p.startswith("audio/"):
-        return f"{ATTACHMENTS}/{p[len('audio/') :]}"
+    if p.startswith("img/") or p.startswith("audio/"):
+        rest = p.split("/", 1)[1]
+        parts = rest.split("/")
+        if len(parts) == 3:
+            return preferred_attachment_rel(parts[0], parts[1], parts[2])
+        return f"{ATTACHMENTS}/{rest}"
     return p
 
 
@@ -110,16 +112,21 @@ def resolve_media_abs(root: Path, rel: str) -> Path:
         raise ValueError(f"invalid media path: {rel!r}")
 
     candidates: list[str] = [cleaned]
-    if cleaned.startswith("img/"):
+    if is_legacy_media(cleaned):
         candidates.append(media_rewrite_legacy_to_attachments(cleaned))
-    elif cleaned.startswith("audio/"):
-        candidates.append(media_rewrite_legacy_to_attachments(cleaned))
-    elif cleaned.startswith(f"{ATTACHMENTS}/"):
+    elif is_attachment_media(cleaned):
         # Also try legacy img/audio with same suffix
         suffix = cleaned[len(ATTACHMENTS) + 1 :]
-        candidates.append(f"img/{suffix}")
-        if suffix.endswith(".m4a"):
-            candidates.append(f"audio/{suffix}")
+        parts = suffix.split("/")
+        if len(parts) == 3:
+            yyyy, mm, name = parts
+            candidates.append(legacy_media_rel("img", yyyy, mm, name))
+            if name.endswith(".m4a"):
+                candidates.append(legacy_media_rel("audio", yyyy, mm, name))
+        else:
+            candidates.append(f"img/{suffix}")
+            if suffix.endswith(".m4a"):
+                candidates.append(f"audio/{suffix}")
 
     base = root.resolve()
     for cand in candidates:
@@ -176,9 +183,9 @@ def machine_exclude_dirs() -> tuple[str, ...]:
         "brain",
         "_capture",
         "_attachments",
-        "_staging",
         "entries",
         "img",
         "audio",
         ".stfolder",
+        "_staging",
     )

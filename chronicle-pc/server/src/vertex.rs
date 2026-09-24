@@ -397,7 +397,7 @@ impl ChatProvider for VertexProvider {
         ];
         let messages = vec![json!({"role": "user", "content": parts})];
         let opts = ChatOpts {
-            model: Some(if self.vision_model.is_empty() { self.default_model.clone() } else { self.vision_model.clone() }),
+            model: Some(self.vision_model_for_request()),
             temperature: 0.1,
             num_predict: Some(200),
             ..Default::default()
@@ -410,5 +410,38 @@ impl ChatProvider for VertexProvider {
 impl VertexProvider {
     fn vision_model_missing(&self) -> String {
         self.default_model.clone()
+    }
+
+    fn vision_model_for_request(&self) -> String {
+        if self.vision_model.is_empty() {
+            self.vision_model_missing()
+        } else {
+            self.vision_model.clone()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_vision_model_falls_back_to_default() {
+        let missing = VertexProvider::new(
+            Some("proj".into()),
+            None,
+            Some("gemini-test".into()),
+            Some(String::new()),
+        )
+        .unwrap();
+        assert_eq!(missing.vision_model_for_request(), "gemini-test");
+        let set = VertexProvider::new(
+            Some("proj".into()),
+            None,
+            Some("gemini-test".into()),
+            Some("gemini-vision".into()),
+        )
+        .unwrap();
+        assert_eq!(set.vision_model_for_request(), "gemini-vision");
     }
 }

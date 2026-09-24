@@ -202,15 +202,15 @@ def _move_note(root: Path, from_rel: str, to_rel: str) -> dict[str, Any]:
         atomic_write_text(dest, content if content.endswith("\n") else content + "\n")
         abs_src.unlink()
 
-    repair = repair_links_after_move(root, primary_rel, to_rel)
+    repair = repair_links_after_move(root, primary_rel, to_rel).as_dict()
     return {
         "ok": True,
         "from_path": primary_rel,
         "to_path": to_rel,
         "quarantined": [],
-        "links_repaired": repair.replacements,
-        "files_updated": repair.files_updated,
-        "changelog_appended": repair.changelog_appended,
+        "links_repaired": repair["replacements"],
+        "files_updated": repair["files_updated"],
+        "changelog_appended": repair["changelog_appended"],
     }
 
 

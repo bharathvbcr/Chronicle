@@ -37,9 +37,8 @@ DEFAULT_LLM = LlmOptions(
 )
 
 
-def config_path(chronicle_dir: Path | None = None) -> Path:
-    root = resolve_chronicle_dir(chronicle_dir) if chronicle_dir else resolve_chronicle_dir()
-    return root / "config.json"
+def config_path(chronicle_dir: Path | str | None = None) -> Path:
+    return resolve_chronicle_dir(chronicle_dir) / "config.json"
 
 
 def _apply_ollama(cfg: ChronicleConfig) -> None:
@@ -78,8 +77,7 @@ def load_config(
     missing on disk, treat it as that value in-memory (do not write). Normal
     callers leave it ``None`` so a missing key stays a hard error.
     """
-    root = resolve_chronicle_dir(chronicle_dir)
-    path = root / "config.json"
+    path = config_path(chronicle_dir)
     if not path.exists():
         from .vault_layout import CURRENT_LAYOUT_VERSION
 
@@ -125,8 +123,7 @@ def load_config(
 
 
 def save_config(cfg: ChronicleConfig, chronicle_dir: Path | str | None = None) -> Path:
-    root = resolve_chronicle_dir(chronicle_dir)
-    path = root / "config.json"
+    path = config_path(chronicle_dir)
     data = cfg.model_dump(exclude_none=True)
     atomic_write_json(path, data)
     _apply_ollama(cfg)
@@ -134,10 +131,9 @@ def save_config(cfg: ChronicleConfig, chronicle_dir: Path | str | None = None) -
 
 
 def ensure_config(chronicle_dir: Path | str | None = None) -> ChronicleConfig:
-    root = resolve_chronicle_dir(chronicle_dir)
-    path = root / "config.json"
+    path = config_path(chronicle_dir)
     if path.exists():
-        return load_config(root)
+        return load_config(chronicle_dir)
     from .vault_layout import CURRENT_LAYOUT_VERSION
 
     cfg = ChronicleConfig(
@@ -148,5 +144,5 @@ def ensure_config(chronicle_dir: Path | str | None = None) -> ChronicleConfig:
         ollama=DEFAULT_OLLAMA,
         llm=DEFAULT_LLM,
     )
-    save_config(cfg, root)
+    save_config(cfg, chronicle_dir)
     return cfg

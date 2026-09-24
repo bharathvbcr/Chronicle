@@ -1716,24 +1716,24 @@ impl ChainMerge for Value {
 }
 
 #[derive(serde::Deserialize, Default)]
+#[serde(default)]
 struct RebuildIndexBody {
     process: Option<bool>,
     sqlite: Option<bool>,
 }
 
+fn rebuild_index_flags(body: Option<RebuildIndexBody>) -> (bool, bool) {
+    let body = body.unwrap_or_default();
+    (body.process.unwrap_or(false), body.sqlite.unwrap_or(false))
+}
+
 async fn post_rebuild_index(
     State(state): State<Arc<App>>,
     Query(params): Query<HashMap<String, String>>,
-    body: Option<Json<Value>>,
+    body: Option<Json<RebuildIndexBody>>,
 ) -> Result<Response, ApiError> {
     let dry_run = params.get("dry_run").map(|v| v == "true").unwrap_or(false);
-    let (do_process, do_sqlite) = match body {
-        Some(Json(b)) => (
-            b.get("process").and_then(Value::as_bool).unwrap_or(false),
-            b.get("sqlite").and_then(Value::as_bool).unwrap_or(false),
-        ),
-        None => (false, false),
-    };
+    let (do_process, do_sqlite) = rebuild_index_flags(body.map(|Json(b)| b));
     blocking(move || {
         let md = crate::markdown_index::rebuild_markdown_index(&state.root, dry_run)?;
         let mut out = json!({
@@ -1822,6 +1822,21 @@ async fn spa_catch_all(
             .into_response());
     }
     Err(ApiError::not_found("frontend index missing"))
+}
+
+#[cfg(test)]
+mod rebuild_index_tests {
+    use super::*;
+
+    #[test]
+    fn rebuild_body_flags_default_false_and_honor_fields() {
+        assert_eq!(rebuild_index_flags(None), (false, false));
+        let parsed: RebuildIndexBody = serde_json::from_str(r#"{"process": true}"#).unwrap();
+        assert_eq!(rebuild_index_flags(Some(parsed)), (true, false));
+        let both: RebuildIndexBody =
+            serde_json::from_str(r#"{"process": false, "sqlite": true}"#).unwrap();
+        assert_eq!(rebuild_index_flags(Some(both)), (false, true));
+    }
 }
 
 // Silence unused import warnings for headers used conditionally.

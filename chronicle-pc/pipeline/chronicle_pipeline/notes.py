@@ -14,11 +14,11 @@ from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from .entries import entry_day, load_all_entries
+from .entries import entries_for_day, load_all_entries
 from .journal import file_entries_for_days
 from .models import Entry
 from .paths import atomic_write_text, content_hash, resolve_chronicle_dir
-from .vault_paths import DERIVED_DIR, JOURNAL_DIR
+from .vault_paths import derived_path, journal_day_path
 
 log = logging.getLogger("chronicle.notes")
 
@@ -87,11 +87,11 @@ def render_daily_note(
 
 def daily_note_path(root: Path, day: date) -> Path:
     """Derived daily chrome path (not 40-Journal)."""
-    return root / DERIVED_DIR / "daily" / f"{day.isoformat()}.md"
+    return derived_path(root, "daily", f"{day.isoformat()}.md")
 
 
 def journal_path(root: Path, day: date) -> Path:
-    return root / JOURNAL_DIR / f"{day.isoformat()}.md"
+    return journal_day_path(root, day.isoformat())
 
 
 def write_if_changed(path: Path, content: str, *, dry_run: bool = False) -> bool:
@@ -157,9 +157,6 @@ def regenerate_daily_for_days(
     """
     root = resolve_chronicle_dir(root)
     all_entries = load_all_entries(root, fallback_tz=fallback_tz)
-    by_day: dict[date, list[Entry]] = defaultdict(list)
-    for e in all_entries:
-        by_day[entry_day(e, fallback_tz=fallback_tz)].append(e)
 
     # File-once journal blocks (prose SoT)
     file_entries_for_days(
@@ -174,7 +171,9 @@ def regenerate_daily_for_days(
     written: list[Path] = []
     for day in sorted(days):
         path = daily_note_path(root, day)
-        content = render_daily_chrome(day, by_day.get(day, []))
+        content = render_daily_chrome(
+            day, entries_for_day(all_entries, day, fallback_tz=fallback_tz)
+        )
         if write_if_changed(path, content, dry_run=dry_run):
             written.append(path)
             log.info(

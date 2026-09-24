@@ -13,7 +13,7 @@ from . import e2ee as e2ee_mod
 from . import llm
 from . import ollama as ollama_mod  # embeds / local vision fallback
 from . import transcribe as transcribe_mod
-from .entries import entry_day, load_all_entries, load_unprocessed, save_entry
+from .entries import entry_day, load_all_entries, load_unprocessed, save_entry, set_processed
 from .journal import file_entry, get_filed, is_file_ready
 from .lock import vault_process_lock
 from .media_paths import MediaPathError, safe_media_path
@@ -215,8 +215,7 @@ def _run_process(
     # Flip processed before filing (state: captured → processed → filed)
     if not dry_run:
         for entry in pending_mark:
-            entry.processed = True
-            save_entry(root, entry)
+            set_processed(root, entry)
             processed_ids.append(entry.id)
             log.info("Marked processed: %s", entry.id)
 

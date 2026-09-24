@@ -26,6 +26,7 @@ from ..lock import vault_process_lock
 from ..media_paths import MediaPathError, validate_media_rel
 from ..models import Entry
 from ..paths import atomic_write_bytes, read_json
+from ..vault_paths import attachments_dir, legacy_media_rel, preferred_attachment_rel
 from .deps import get_root
 
 log = logging.getLogger("chronicle.api.entries")
@@ -207,9 +208,10 @@ def _check_media_list(root: Path, paths: list[str], *, kind: str) -> None:
 def _next_media_index(root: Path, folder: str, entry_id: str, ext: str) -> int:
     yyyy, mm = shard_from_id(entry_id)
     # Prefer attachments; also scan legacy folder for next index
-    directories = [root / "_attachments" / yyyy / mm]
+    directories = [attachments_dir(root) / yyyy / mm]
     if folder in ("img", "audio"):
-        directories.append(root / folder / yyyy / mm)
+        legacy_file = legacy_media_rel(folder, yyyy, mm, f"{entry_id}_1.{ext}")
+        directories.append(root / Path(legacy_file).parent)
     used: set[int] = set()
     prefix = f"{entry_id}_"
     for directory in directories:
@@ -450,7 +452,7 @@ async def upload_image(
 
         yyyy, mm = shard_from_id(entry_id)
         n = _next_media_index(root, "img", entry_id, "jpg")
-        rel = f"_attachments/{yyyy}/{mm}/{entry_id}_{n}.jpg"
+        rel = preferred_attachment_rel(yyyy, mm, f"{entry_id}_{n}.jpg")
         atomic_write_bytes(root / rel, data)
         entry.images = list(entry.images) + [rel]
         _save_entry_or_locked(root, entry)
@@ -489,7 +491,7 @@ async def upload_audio(
 
         yyyy, mm = shard_from_id(entry_id)
         n = _next_media_index(root, "audio", entry_id, "m4a")
-        rel = f"_attachments/{yyyy}/{mm}/{entry_id}_{n}.m4a"
+        rel = preferred_attachment_rel(yyyy, mm, f"{entry_id}_{n}.m4a")
         atomic_write_bytes(root / rel, data)
         entry.audio = list(entry.audio) + [rel]
         _save_entry_or_locked(root, entry)
