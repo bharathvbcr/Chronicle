@@ -1,0 +1,46 @@
+name: Dependency audit
+
+# GitHub's dependency graph does not read bun.lock, so Dependabot raises no
+# alerts or security PRs for transitive JS dependencies. This gate does.
+on:
+  push:
+    paths:
+      - "chronicle-pc/frontend/package.json"
+      - "chronicle-pc/frontend/bun.lock"
+      - "chronicle-pc/desktop/package.json"
+      - "chronicle-pc/desktop/bun.lock"
+      - ".github/workflows/bun-audit.yml"
+  pull_request:
+    paths:
+      - "chronicle-pc/frontend/package.json"
+      - "chronicle-pc/frontend/bun.lock"
+      - "chronicle-pc/desktop/package.json"
+      - "chronicle-pc/desktop/bun.lock"
+      - ".github/workflows/bun-audit.yml"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: bun-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [chronicle-pc/frontend, chronicle-pc/desktop]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ${{ matrix.dir }}/package.json
+      # Reads bun.lock directly (no install needed) and exits 1 on any advisory.
+      - name: bun audit
+        run: bun audit

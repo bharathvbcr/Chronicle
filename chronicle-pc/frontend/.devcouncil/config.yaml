@@ -13,7 +13,7 @@ commands:
   lint:
   - eslint .
   test:
-  - npm test
+  - bun run test
   typecheck:
   - tsc --noEmit
 execution:

@@ -7,8 +7,8 @@ React / TypeScript / Vite application shared by the browser and Tauri desktop. I
 From this directory:
 
 ```bash
-npm ci
-npm run build
+bun install --frozen-lockfile
+bun run build
 ```
 
 The build runs TypeScript project checking followed by Vite and writes `dist/`. Both Rust and Python servers can serve this output at `/`; the legacy dashboard remains at `/legacy`. Building the Tauri shell does not build this directory automatically.
@@ -22,7 +22,7 @@ export CHRONICLE_DIR="$HOME/Chronicle"
 ./chronicle-pc/server/target/release/chronicle serve --no-lan --port 8765
 ```
 
-Then, from this directory, run `npm run dev`. [vite.config.ts](vite.config.ts) declares the development API proxies to port 8765. It is an explicit endpoint list, not a catch-all; when diagnosing a missing development-only API request, compare the path to that list. Served production assets use the server's same-origin API.
+Then, from this directory, run `bun run dev`. [vite.config.ts](vite.config.ts) declares the development API proxies to port 8765. It is an explicit endpoint list, not a catch-all; when diagnosing a missing development-only API request, compare the path to that list. Served production assets use the server's same-origin API.
 
 ## UI ownership
 
@@ -38,9 +38,9 @@ Notes groups editable areas under `00-Inbox/`, `10-Work/`, `20-Personal/`, and `
 ## Checks
 
 ```bash
-npm run lint
-npm run test
-npm run build
+bun run lint
+bun run test
+bun run build
 ```
 
 The product website is a different application: `src/pages/Chronicle.jsx` in the Portfolio repository. Do not redesign this vault UI when changing the public website. See [development ownership](../../docs/DEVELOPMENT.md#website-and-public-content).

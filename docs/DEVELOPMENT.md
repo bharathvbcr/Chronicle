@@ -13,10 +13,10 @@ Run these from the repository root after installing the appropriate existing pro
 | Python lint | `(cd chronicle-pc && ./.venv/bin/ruff check pipeline tests)` |
 | Rust server tests | `(cd chronicle-pc/server && cargo test)` |
 | Rust CLI build | `(cd chronicle-pc/server && cargo build --release)` |
-| Frontend tests | `(cd chronicle-pc/frontend && npm run test)` |
-| Frontend lint | `(cd chronicle-pc/frontend && npm run lint)` |
-| Frontend types + build | `(cd chronicle-pc/frontend && npm run build)` |
-| Desktop bundle | `(cd chronicle-pc/desktop && npm run tauri:build)` |
+| Frontend tests | `(cd chronicle-pc/frontend && bun run test)` |
+| Frontend lint | `(cd chronicle-pc/frontend && bun run lint)` |
+| Frontend types + build | `(cd chronicle-pc/frontend && bun run build)` |
+| Desktop bundle | `(cd chronicle-pc/desktop && bun run tauri:build)` |
 | Android lint | `(cd chronicle-android && ./gradlew :app:lintDebug)` |
 | Android unit tests | `(cd chronicle-android && ./gradlew :app:testDebugUnitTest)` |
 | Android compilation | `(cd chronicle-android && ./gradlew :app:compileDebugKotlin)` |

@@ -4,16 +4,16 @@ Tauri 2 shell with an **embedded Rust server** and the shared React application.
 
 ## Build and run
 
-From the repository root, with macOS build tools, Rust, and Node/npm installed:
+From the repository root, with macOS build tools, Rust, and Node, and Bun installed:
 
 ```bash
-(cd chronicle-pc/frontend && npm ci && npm run build)
-(cd chronicle-pc/desktop && npm ci && npm run tauri:build)
+(cd chronicle-pc/frontend && bun install --frozen-lockfile && bun run build)
+(cd chronicle-pc/desktop && bun install --frozen-lockfile && bun run tauri:build)
 export CHRONICLE_DIR="$HOME/Chronicle"
 bash "chronicle-pc/Start Chronicle.command"
 ```
 
-For development use `npm run tauri:dev` from `chronicle-pc/desktop/`. Its Vite server serves the shell startup/capture pages; the shared React vault UI is a separate frontend build.
+For development use `bun run tauri:dev` from `chronicle-pc/desktop/`. Its Vite server serves the shell startup/capture pages; the shared React vault UI is a separate frontend build.
 
 Current configured bundles are macOS `app` and `dmg`. The configured minimum system version is 12.0; that is not a physical compatibility test. Outputs are under `src-tauri/target/release/bundle/`, with the executable at `src-tauri/target/release/chronicle`. Signing, notarization, installation, and launch from a relocated bundle need separate verification.
 

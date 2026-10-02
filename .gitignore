@@ -83,7 +83,7 @@ KnowledgeBase/
 # Runtime state
 *.lock
 !Cargo.lock
-!package-lock.json
+!bun.lock
 
 # Local project inventory for ingest_project_docs.py (may name private repos)
 projects.local.json

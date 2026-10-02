@@ -20,11 +20,11 @@ Optional cloud chat and vision require consent. API credentials stay outside the
 
 The current distribution path is a **source build**. The Tauri app uses an **embedded Rust server**. Python is available for the alternative server, watcher, and migration tools; it is not the desktop app's sidecar.
 
-From this repository's root, with Rust, the macOS build tools, and a Node version compatible with the checked-in frontend installed:
+From this repository's root, with Rust, the macOS build tools, Bun, and a Node version compatible with the checked-in frontend installed:
 
 ```bash
 # Build the shared application UI.
-(cd chronicle-pc/frontend && npm ci && npm run build)
+(cd chronicle-pc/frontend && bun install --frozen-lockfile && bun run build)
 
 # Build the native CLI and initialize a new, separate data folder.
 (cd chronicle-pc/server && cargo build --release)

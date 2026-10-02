@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Same-origin API during `npm run dev`
+      // Same-origin API during `bun run dev`
       '/entries': 'http://127.0.0.1:8765',
       '/kb': 'http://127.0.0.1:8765',
       '/notes': 'http://127.0.0.1:8765',

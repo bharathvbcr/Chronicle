@@ -9,7 +9,7 @@ The Mac runtime processes the shared vault, serves the application UI, and build
 From this directory:
 
 ```bash
-(cd frontend && npm ci && npm run build)
+(cd frontend && bun install --frozen-lockfile && bun run build)
 (cd server && cargo build --release)
 export CHRONICLE_DIR="$HOME/Chronicle"
 ./server/target/release/chronicle serve --no-lan

@@ -7,12 +7,12 @@ Build the Mac app or run the shared UI in a browser, then add Android and folder
 | Route | What runs | What you need |
 | --- | --- | --- |
 | Native browser | Rust CLI serving the React UI | Rust toolchain, built frontend |
-| Desktop | Tauri with an embedded Rust server | macOS build tools, Rust, Node/npm, built frontend and retained checkout |
+| Desktop | Tauri with an embedded Rust server | macOS build tools, Rust, Node and Bun, built frontend and retained checkout |
 | Python tools | FastAPI server, file watcher, migration/maintenance CLI | Python 3.11+ and the project's virtual environment |
 
 The current Tauri configuration targets macOS app and DMG bundles. A build artifact is not evidence of signing or notarization. The desktop still resolves `chronicle-pc/` and frontend assets on disk; retain the checkout. See [desktop details](../chronicle-pc/desktop/README.md).
 
-For the frontend, use a Node version accepted by the locked Vite package (check `node_modules/vite/package.json` after install); Node 22.12+ on the 22.x line satisfies the current Vite 8 requirement. Android uses JDK 21 and the project's Gradle wrapper; SDK versions come from its [build configuration](../chronicle-android/app/build.gradle.kts).
+The frontend and desktop shell use Bun as the package manager and script runner (`bun.lock` is the lockfile). `bun run` still executes Vite, Vitest and `tsc` on Node, so a compatible Node is required too: use a version accepted by the locked Vite package (check `node_modules/vite/package.json` after install); Node 22.12+ on the 22.x line satisfies the current Vite 8 requirement. Android uses JDK 21 and the project's Gradle wrapper; SDK versions come from its [build configuration](../chronicle-android/app/build.gradle.kts).
 
 ## 1. Prepare the Mac vault and UI
 
@@ -21,7 +21,7 @@ For a **new** vault:
 ```bash
 mkdir -p ~/Chronicle
 export CHRONICLE_DIR="$HOME/Chronicle"
-(cd chronicle-pc/frontend && npm ci && npm run build)
+(cd chronicle-pc/frontend && bun install --frozen-lockfile && bun run build)
 (cd chronicle-pc/server && cargo build --release)
 ./chronicle-pc/server/target/release/chronicle serve --no-lan
 ```
@@ -35,7 +35,7 @@ The Rust API serves `frontend/dist/` at `/` when available. The old single-file 
 Stop the browser-route server before launching the desktop against the same vault.
 
 ```bash
-(cd chronicle-pc/desktop && npm ci && npm run tauri:build)
+(cd chronicle-pc/desktop && bun install --frozen-lockfile && bun run tauri:build)
 export CHRONICLE_DIR="$HOME/Chronicle"
 bash "chronicle-pc/Start Chronicle.command"
 ```

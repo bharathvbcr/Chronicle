@@ -50,7 +50,13 @@ for unfiled capture text only; it is not whole-vault encryption.
 
 ## Dependency advisories
 
-Dependabot watches `package-lock.json` and `Cargo.lock`. Patch advisories by
+Dependabot alerts cover `Cargo.lock`. GitHub's dependency graph does not read
+`bun.lock`, so it raises no alerts or security PRs for the frontend and desktop
+JS dependencies. Two things cover them instead: the `Dependency audit` workflow
+(`.github/workflows/bun-audit.yml`) runs `bun audit` against each `bun.lock` on
+every dependency change and weekly, failing on any advisory; and Dependabot
+opens weekly version-update PRs (`.github/dependabot.yml`). Patch JS advisories
+with `bun audit fix`. Patch advisories by
 updating the lock file; anything that cannot be patched is recorded below with
 the reason, and each exception is enforced by a test so it cannot quietly
 outlive its justification.
