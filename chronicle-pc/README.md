@@ -1,6 +1,6 @@
 # Chronicle on Mac
 
-The Mac runtime processes the shared vault, serves the application UI, and builds search and Brain. The **Rust server** powers the desktop in-process. The **Python CLI** remains the alternative API runtime and the owner of watcher and migration commands.
+The Mac runtime processes the shared vault, serves the application UI, and builds search and Brain. The **Rust server and CLI** (`chronicle-pc/server/`) is designated as the single production owner for all shipped runtime capabilities. The **Python toolchain** (`chronicle-pc/pipeline/`) is transitioning to a reference test oracle and fixture generator under our single-owner architecture plan; see [Architecture](../docs/ARCHITECTURE.md#single-owner-runtime-architecture-and-transition-plan).
 
 [Setup](../docs/SETUP.md) · [Architecture](../docs/ARCHITECTURE.md) · [Operations](../docs/OPERATIONS.md) · [Contract v1.11](CONTRACT.md)
 
@@ -29,25 +29,27 @@ python3 -m venv .venv
 ./.venv/bin/chronicle --help
 ```
 
-Python 3.11+ is required by `pyproject.toml`. Optional extras are `vec`, `vertex`, and `mdns`; install only the extras required by your chosen workflow. Use explicit binary paths to avoid confusing the two commands named `chronicle`.
+Python 3.11+ is required by `pyproject.toml`. Optional extras are `vec`, `vertex`, and `mdns`; install only the extras required by your chosen workflow. Use explicit binary paths to avoid confusing the two commands named `chronicle`. Under the single-owner transition plan, Python serves as an assertion-backed reference oracle for contract and behavioral parity testing.
 
 ## Command availability
 
-Checked against [Rust dispatch](server/src/main.rs) and [Python dispatch](pipeline/chronicle_pipeline/cli.py). This table describes commands, not full behavioral parity.
+Checked against [Rust dispatch](server/src/main.rs) and [Python dispatch](pipeline/chronicle_pipeline/cli.py). This table describes commands during the transition period. Under the [single-owner port plan](../docs/ARCHITECTURE.md#single-owner-runtime-architecture-and-transition-plan), Rust will solely own all production commands.
 
-| Command | Rust CLI | Python CLI |
-| --- | --- | --- |
-| `serve`, `process`, `brain`, `index` | Yes | Yes |
-| `backup`, `export`, `doctor`, `rollup`, `topics` | Yes | Yes |
-| `rebuild-markdown-index` | Yes | Yes |
-| `watch`, `rebuild`, `init-vault-structure`, `enrich-kb` | No | Yes |
-| `pair`, `unpair`, `pairs` | No; server APIs available | Yes |
-| `e2ee-setup`, `unlock`, `lock` | No; server APIs available | Yes |
-| `migrate*`, `cutover-kb`, `import-*` | Reports Python-only tooling | Yes |
-| `serve --no-tls` | Not a supported native downgrade | Python option |
-| `index --write-markdown` | Use separate `rebuild-markdown-index` | Yes |
+| Command | Rust CLI | Python CLI | Single-owner target |
+| --- | --- | --- | --- |
+| `serve`, `process`, `brain`, `index` | Yes | Yes | **Rust** (Python as oracle) |
+| `backup`, `export`, `doctor`, `rollup`, `topics` | Yes | Yes | **Rust** (Python as oracle / delete) |
+| `rebuild-markdown-index` | Yes | Yes | **Rust** (Python as oracle) |
+| `watch` | No | Yes | **Rust** (Phase 5 port: in-process & CLI daemon) |
+| `rebuild` | No | Yes | **Rust** (Phase 6 port: native orchestrator) |
+| `pair`, `unpair`, `pairs` | No; server APIs available | Yes | **Rust** (Phase 2 port: persistent pairstore CLI) |
+| `e2ee-setup`, `unlock`, `lock` | No; server APIs available | Yes | **Rust** (Phase 1 port: native E2EE CLI) |
+| `migrate-v2`, `migrate-journal-v2` | Reports Python-only tooling | Yes | **Rust** (Phase 6 port: native layout v2 migration) |
+| `cutover-kb`, `import-*`, `migrate-kb` | Reports Python-only tooling | Yes | Retired / historical offline scripts |
+| `serve --no-tls` | Not a supported native downgrade | Python option | Deprecated (Rust enforces pinned TLS on LAN) |
+| `index --write-markdown` | Use separate `rebuild-markdown-index` | Yes | Unified under Rust `index` / `rebuild-markdown-index` |
 
-The native CLI parser is not a substitute for Python's per-command `--help`. Check supported flags in `server/src/main.rs` before assuming an option is honored.
+The native CLI parser is not a substitute for Python's per-command `--help`. Check supported flags in `server/src/main.rs` before assuming an option is honored. Refer to the [Architecture transition guide](../docs/ARCHITECTURE.md#single-owner-runtime-architecture-and-transition-plan) for the complete duplicated module inventory, port roadmap, and parity harness design.
 
 ## Vault and models
 
