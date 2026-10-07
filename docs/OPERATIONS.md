@@ -39,9 +39,9 @@ mkdir -p "$HOME/Backups"
 ./chronicle-pc/server/target/release/chronicle backup "$HOME/Backups/chronicle-before-change.zip"
 ```
 
-Choose a new backup filename; existing files require an explicit overwrite option. Store backups **outside the Syncthing folder**. The backup excludes the rebuildable `index/`.
+Choose a new backup filename; existing files require an explicit overwrite option. Store backups **outside the Syncthing folder**. The backup excludes the rebuildable `index/` plus the entries in `chronicle-pc/contract/backup-exclusions.json` (`.git/`, `.venv/`, `__pycache__/`, `.stfolder/`, `*.tmp`, `.DS_Store`); other dotfiles such as `.stignore` and `.obsidian/` are kept. If any file or directory cannot be read, or the tree is deeper than the walker's depth cap, the command fails with an error naming the path and leaves no archive at the target — fix the permission and rerun rather than relying on a partial backup.
 
-For recovery, stop writers, extract the archive to a separate folder, point `CHRONICLE_DIR` there, and run `doctor`. Check the recovered entries, Markdown, and attachments before putting it back into sync. Rebuild the index and other derived content as needed. A successful archive command does not by itself prove a complete restore.
+For recovery, stop writers, extract the archive to a separate folder (entries are stored under a top-level `Chronicle/` directory), point `CHRONICLE_DIR` there, and run `doctor`. The test `backup_restore_round_trip_passes_doctor` in `chronicle-pc/server/src/backup.rs` exercises this drill: it backs up a fixture vault, extracts it, and requires `doctor` on the restored copy to report exactly what it reported on the original. Check the recovered entries, Markdown, and attachments before putting it back into sync. Rebuild the index and other derived content as needed. A successful archive command does not by itself prove a complete restore.
 
 `doctor` without `--fix` is report-only. Review its output before applying repairs. Markdown conflicts and orphan media need human review; do not equate repair of entry JSON conflicts with automatic recovery of all user content.
 

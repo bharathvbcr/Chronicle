@@ -28,6 +28,20 @@ pub fn list_children(dir: &Path) -> Vec<(PathBuf, bool)> {
         .collect()
 }
 
+/// Strict [`list_children`]: same `(path, is_real_dir)` shape and symlink
+/// rule, but a `read_dir` failure or an unreadable entry is returned as an
+/// error instead of being dropped. For walkers whose output must be complete
+/// (backup), where a silently shortened listing is data loss.
+pub fn try_list_children(dir: &Path) -> std::io::Result<Vec<(PathBuf, bool)>> {
+    let mut out = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let is_dir = entry.file_type()?.is_dir();
+        out.push((entry.path(), is_dir));
+    }
+    Ok(out)
+}
+
 /// Depth-capped, symlink-safe recursive file collection under `dir`.
 /// `keep_file(path, name)` decides which files to emit; directories are always
 /// descended into (callers pre-filter excluded dir names themselves when

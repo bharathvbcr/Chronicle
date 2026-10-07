@@ -83,7 +83,7 @@ Rust is designated as the sole production owner for all runtime modules. Python 
 
 | Module | Rust path | Python path | Lines (RS / PY) | Responsibility | Chosen owner | Python future role | Rationale and drift risks |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **pipeline / process** | `server/src/pipeline.rs` | `pipeline/process.py`, `api/process.py` | 314 / 310 | Vault processing pipeline, attachment handling, journal filing, state machine | **Rust** | **oracle** | Rust lacks E2EE decryption in pipeline (`chr-rust-process-e2ee-empty-fence`), writing empty journal fences. Python serves as oracle for journal fence layout and metadata state. |
+| **pipeline / process** | `server/src/pipeline.rs` | `pipeline/process.py`, `api/process.py` | 314 / 310 | Vault processing pipeline, attachment handling, journal filing, state machine | **Rust** | **oracle** | Rust lacks E2EE decryption, so `process` refuses a vault whose config enables E2EE and never processes or files an entry carrying `text_enc` (`chr-rust-process-e2ee-empty-fence`; `pipeline::e2ee_fail_closed_tests`). Python serves as oracle for journal fence layout and metadata state. |
 | **journal** | `server/src/journal.rs` | `pipeline/journal.py`, `api/journal.py` | 543 / 632 | Daily journal markdown (`40-Journal/YYYY-MM-DD.md`), fences, conflict detection, block amends | **Rust** | **oracle** | Preserves fence parsing, content hash calculation, and conflict-detection equivalence across daily files. |
 | **captions** | `server/src/captions.rs` | `pipeline/captions.py` | 52 / 44 | Image attachment captioning via vision LLM | **Rust** | **delete** | Thin wrapper over LLM provider. Rust dropped Ollama fallback during cloud outages (`chr-image-caption-reliability`). Delete Python once Rust provider fallback is hardened. |
 | **transcribe** | `server/src/transcribe.rs` | `pipeline/transcribe.py` | 199 / 129 | Audio transcription via `whisper-cli` subprocess | **Rust** | **delete** | Subprocess invocation. Rust historically lacked execution timeouts, causing hung processes to hold vault locks. Delete Python once Rust timeout is verified. |
@@ -96,7 +96,7 @@ Rust is designated as the sole production owner for all runtime modules. Python 
 | **prompts** | `server/src/prompts.rs` | `pipeline/brain/prompts.py` | 29 / 66 | LLM prompt templates for brain extraction and insights | **Rust** | **delete** | Static prompt text constants. Single owner in Rust. |
 | **curation** | `server/src/curation.rs` | `pipeline/curation.py` | 617 / 347 | Log-based curation ops (`curation/ops/<device>.jsonl`), replay, op compaction | **Rust** | **oracle** | Verifies algebraic invariants of compaction (`pin`/`unpin`, `create`/`delete`) and deterministic graph state reconstruction. |
 | **doctor** | `server/src/doctor.rs` | `pipeline/doctor.py` | 460 / 636 | Vault integrity diagnostics, sync conflict repair, mirror hazard detection | **Rust** | **oracle** | Diagnostic report oracle. Python verifies detection coverage across corrupted vault test fixtures. |
-| **backup** | `server/src/backup.rs` | `pipeline/backup.py` | 135 / 51 | Vault zip archive generation excluding `index/` and dotfiles | **Rust** | **oracle** | Runtimes previously had divergent exclusion lists and Rust silently skipped unreadable files (`chr-backup-silent-skips-restore-test`). Oracle verifies archive manifests. |
+| **backup** | `server/src/backup.rs` | `pipeline/backup.py` | 485 / 92 | Vault zip archive generation; exclusions (`index/`, `.git/`, `.venv/`, `__pycache__/`, `.stfolder/`, `*.tmp`, `.DS_Store`) read by both runtimes from `contract/backup-exclusions.json` | **Rust** | **oracle** | Fails loud on unreadable files/directories and on the walk-depth cap, and writes via temp file + rename so a failed run leaves no zip (`chr-backup-silent-skips-restore-test`). Restore drill: `backup_restore_round_trip_passes_doctor`. Oracle verifies archive manifests. |
 | **export** | `server/src/export.rs` | `pipeline/export.py` | 47 / 56 | Vault export bundles (`chronosflow`) | **Rust** | **delete** | Simple serialization bundle without complex logic. |
 | **lock** | `server/src/lock.rs` | `pipeline/lock.py` | 153 / 62 | Cross-process file locking (`.chronicle.lock`) via `flock` | **Rust** | **delete** | Low-level OS lock primitive. Rust implementation is canonical. |
 | **path_map** | `server/src/path_map.rs` | `pipeline/path_map.py` | 428 / 399 | Path traversal security, symlink containment, canonicalization | **Rust** | **oracle** | Security boundary oracle: ensures symlink breakout vectors and traversal attacks are rejected identically. |
@@ -132,7 +132,7 @@ flowchart TD
 ```
 
 #### Phase 1: Field-level E2EE cryptography and vault state
-- **Motivation**: Rust currently processes E2EE entries without key derivation, creating empty journal fences (`chr-rust-process-e2ee-empty-fence`). 
+- **Motivation**: Rust has no key derivation, so it cannot process E2EE vaults at all: `process` refuses them and skips sealed entries rather than filing empty journal fences (`chr-rust-process-e2ee-empty-fence`). 
 - **Scope**:
   - Implement `server/src/e2ee.rs` using `ring::pbkdf2` (600,000 iterations, HMAC-SHA256) and `ring::aead::AES_256_GCM` (already linked in `Cargo.toml`).
   - Wire process-lifetime in-memory key state (`Arc<RwLock<Option<ZeroizingKey>>>`).

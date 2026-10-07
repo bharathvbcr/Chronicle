@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail if CONTRACT.md or contract/*.schema.json differ between chronicle-pc and chronicle-android.
+# Fail if CONTRACT.md or contract/*.json (schemas + shared data such as backup-exclusions.json) differ between chronicle-pc and chronicle-android.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,7 +21,7 @@ cmp_file() {
 cmp_file "CONTRACT.md"
 
 shopt -s nullglob
-schemas=("$PC"/contract/*.schema.json)
+schemas=("$PC"/contract/*.json)
 if [[ ${#schemas[@]} -eq 0 ]]; then
   echo "ERROR: no schema files under chronicle-pc/contract/"
   exit 1
@@ -37,8 +37,8 @@ for schema in "${schemas[@]}"; do
   cmp_file "contract/$name"
 done
 
-# Android must not have extra schemas the PC lacks
-for schema in "$AND"/contract/*.schema.json; do
+# Android must not have extra contract files the PC lacks
+for schema in "$AND"/contract/*.json; do
   name="$(basename "$schema")"
   if [[ ! -f "$PC/contract/$name" ]]; then
     echo "EXTRA on Android (missing on PC): contract/$name"

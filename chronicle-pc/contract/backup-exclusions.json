@@ -1,0 +1,5 @@
+{
+  "dir_names": ["index", ".git", ".venv", "__pycache__", ".stfolder"],
+  "file_names": [".DS_Store"],
+  "file_suffixes": [".tmp"]
+}
