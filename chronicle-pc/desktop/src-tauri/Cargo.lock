@@ -409,7 +409,7 @@ dependencies = [
 
 [[package]]
 name = "chronicle"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "axum",
  "chronicle-server",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "chronicle-server"
-version = "0.1.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "axum",

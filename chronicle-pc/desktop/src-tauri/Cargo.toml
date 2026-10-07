@@ -1,6 +1,6 @@
 [package]
 name = "chronicle"
-version = "0.1.0"
+version = "0.0.2"
 description = "Chronicle desktop shell — Tauri wrapper around chronicle serve + SPA"
 authors = ["Chronicle"]
 edition = "2021"

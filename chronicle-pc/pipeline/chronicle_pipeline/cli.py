@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="chronicle",
         description="Chronicle PC pipeline — process journal folder, build brain, serve dashboard",
     )
-    parser.add_argument("--version", action="version", version="chronicle-pipeline 0.1.0")
+    parser.add_argument("--version", action="version", version="chronicle-pipeline 0.0.2")
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command")
 
