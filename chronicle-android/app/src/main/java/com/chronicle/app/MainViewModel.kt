@@ -343,6 +343,9 @@ class MainViewModel : ViewModel() {
             _currentScreen.value = Screen.CAPTURE
             refreshAll(context)
             startVaultWatch(context)
+            // Quick captures the worker could not write (e.g. the grant was
+            // missing) are filed now that the vault is reachable.
+            flushPendingCapturesAsync(context)
         } else {
             // Keep vault_uri in prefs so the path is remembered across launches;
             // FIRST_RUN only means we need a fresh SAF grant (or first pick).
@@ -365,6 +368,7 @@ class MainViewModel : ViewModel() {
             folderInitialized = true
             refreshAll(context)
             startVaultWatch(context)
+            flushPendingCapturesAsync(context)
         } catch (e: Exception) {
             e.printStackTrace()
             _userMessages.tryEmit("Could not save folder access. Please choose the folder again.")
@@ -779,16 +783,21 @@ class MainViewModel : ViewModel() {
      * minting a fresh key would fork from the PC and seal entries neither
      * side could read. Fresh params are only generated for a truly phone-first
      * setup, then mirrored create-only into vault config.json.
+     *
+     * Suspends: the config read is SAF I/O and key derivation is 600k-round
+     * PBKDF2 — both run off the main thread (E2eeManager enforces the latter).
      */
-    fun e2eeEnable(context: Context, passphrase: String): Boolean {
+    suspend fun e2eeEnable(context: Context, passphrase: String): Boolean {
         val appContext = context.applicationContext
-        val existing: org.json.JSONObject? = try {
-            val uriStr = _folderUri.value
-            if (uriStr.isNullOrBlank()) null
-            else VaultRepository(appContext, Uri.parse(uriStr)).readConfigJsonObject("e2ee")
-                ?.takeIf { it.optBoolean("enabled") }
-        } catch (_: Exception) {
-            null
+        val existing: org.json.JSONObject? = withContext(Dispatchers.IO) {
+            try {
+                val uriStr = _folderUri.value
+                if (uriStr.isNullOrBlank()) null
+                else VaultRepository(appContext, Uri.parse(uriStr)).readConfigJsonObject("e2ee")
+                    ?.takeIf { it.optBoolean("enabled") }
+            } catch (_: Exception) {
+                null
+            }
         }
         val block = com.chronicle.app.e2ee.E2eeManager.enable(appContext, passphrase, existing)
         if (block == null) {
@@ -813,39 +822,36 @@ class MainViewModel : ViewModel() {
         return true
     }
 
-    /** Unlock re-reads vault config.json first so PC-side re-setup self-heals. */
-    fun e2eeUnlock(context: Context, passphrase: String): Boolean {
+    /**
+     * Unlock re-reads vault config.json first so PC-side re-setup self-heals.
+     * Suspends for the same reasons as [e2eeEnable].
+     */
+    suspend fun e2eeUnlock(context: Context, passphrase: String): Boolean {
         val appContext = context.applicationContext
         if (!com.chronicle.app.e2ee.E2eeManager.unlocked.value) {
-            try {
-                val uriStr = _folderUri.value
-                if (!uriStr.isNullOrBlank()) {
-                    VaultRepository(appContext, Uri.parse(uriStr))
-                        .readConfigJsonObject("e2ee")
-                        ?.takeIf { it.optBoolean("enabled") }
-                        ?.let { remote ->
-                            com.chronicle.app.e2ee.E2eeManager.adoptRemoteParams(
-                                appContext,
-                                remote.optJSONObject("kdf") ?: org.json.JSONObject(),
-                                remote.optJSONObject("check") ?: org.json.JSONObject(),
-                            )
-                        }
+            withContext(Dispatchers.IO) {
+                try {
+                    val uriStr = _folderUri.value
+                    if (!uriStr.isNullOrBlank()) {
+                        VaultRepository(appContext, Uri.parse(uriStr))
+                            .readConfigJsonObject("e2ee")
+                            ?.takeIf { it.optBoolean("enabled") }
+                            ?.let { remote ->
+                                com.chronicle.app.e2ee.E2eeManager.adoptRemoteParams(
+                                    appContext,
+                                    remote.optJSONObject("kdf") ?: org.json.JSONObject(),
+                                    remote.optJSONObject("check") ?: org.json.JSONObject(),
+                                )
+                            }
+                    }
+                } catch (_: Exception) {
+                    // Offline / no SAF access → fall back to cached params.
                 }
-            } catch (_: Exception) {
-                // Offline / no SAF access → fall back to cached params.
             }
         }
         val ok = com.chronicle.app.e2ee.E2eeManager.unlock(appContext, passphrase)
-        if (ok) {
-            // Drain anything captured while locked, now that a key exists.
-            viewModelScope.launch(Dispatchers.IO) {
-                val n = flushPendingCaptures(appContext)
-                if (n > 0) {
-                    _userMessages.tryEmit("Filed $n capture(s) saved while locked.")
-                    refreshAll(appContext)
-                }
-            }
-        }
+        // Drain anything captured while locked, now that a key exists.
+        if (ok) flushPendingCapturesAsync(appContext)
         return ok
     }
 
@@ -2375,24 +2381,6 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * Seal capture text when E2EE is on and the session is unlocked.
-     * Returns null (plaintext path) when e2ee is off — never silently drops
-     * text: locked sessions save plaintext to SAF and log a warning, matching
-     * the "capture always wins" rule over silent data loss.
-     */
-    /**
-     * Seal for an E2EE vault, or null when encryption is off.
-     *
-     * Callers must distinguish "encryption off" from "enabled but locked" —
-     * see [isLockedForCapture]. Returning null for both is what used to make
-     * the save path write plaintext into an encrypted vault.
-     */
-    private fun maybeSealCapture(plaintext: String): JSONObject? {
-        if (!com.chronicle.app.e2ee.E2eeManager.enabled.value) return null
-        return com.chronicle.app.e2ee.E2eeManager.sealText(plaintext)
-    }
-
-    /**
      * The only place entries enter UI state.
      *
      * Locking clears the key but cannot reach back into a list that was
@@ -2417,113 +2405,55 @@ class MainViewModel : ViewModel() {
             .sorted()
     }
 
-    /** True when E2EE is on but this session has no key, so nothing may be written in the clear. */
+    /**
+     * Display masking only (see [publishEntries]): the in-memory flag is
+     * loaded by [loadSettings]. Write paths must use
+     * [com.chronicle.app.e2ee.E2eeManager.sealForCapture], which reads
+     * persisted state.
+     */
     private fun isLockedForCapture(): Boolean =
         com.chronicle.app.e2ee.E2eeManager.enabled.value &&
             !com.chronicle.app.e2ee.E2eeManager.unlocked.value
 
-    /**
-     * Park a capture taken while the vault is locked.
-     *
-     * It is sealed at rest by SecurePrefs (AndroidKeyStore) outside the synced
-     * vault, and re-sealed with the vault key by [flushPendingCaptures] on
-     * unlock. Capture still "always wins" — it just never wins by writing
-     * plaintext the user asked us to encrypt.
-     */
-    private fun queueLockedCapture(
-        context: Context,
-        id: String,
-        ts: String,
-        type: String,
-        text: String,
-        tags: List<String>,
-        mood: Int?,
-        images: List<Uri>,
-        audio: List<String>,
-    ): Boolean {
-        val staged = images.mapNotNull {
-            com.chronicle.app.e2ee.PendingCaptureQueue.stageMedia(context, it)
-        }
-        val obj = org.json.JSONObject()
-            .put("id", id)
-            .put("ts", ts)
-            .put("type", type)
-            .put("text", text)
-            .put("tags", org.json.JSONArray(tags))
-            .put("images", org.json.JSONArray(staged))
-            .put("audio", org.json.JSONArray(audio))
-        if (mood != null) obj.put("mood", mood)
-        val ok = com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(context, obj)
-        if (!ok) {
-            com.chronicle.app.e2ee.PendingCaptureQueue.clearStaged(context, staged)
-        }
-        return ok
-    }
-
-    /** Number of captures waiting for an unlock (surfaced in Settings). */
+    /** Number of captures not yet in the vault (surfaced in Settings). */
     fun pendingCaptureCount(context: Context): Int =
         com.chronicle.app.e2ee.PendingCaptureQueue.count(context.applicationContext)
 
+    /** Flush parked captures off the main thread, then refresh if any landed. */
+    private fun flushPendingCapturesAsync(context: Context) {
+        val appContext = context.applicationContext
+        viewModelScope.launch(Dispatchers.IO) {
+            val n = try {
+                flushPendingCaptures(appContext)
+            } catch (e: Exception) {
+                android.util.Log.w("MainViewModel", "pending capture flush failed", e)
+                0
+            }
+            if (n > 0) {
+                _userMessages.tryEmit("Filed $n capture(s) that were waiting to be saved.")
+                refreshAll(appContext)
+            }
+        }
+    }
+
     /**
-     * Write every parked capture into the vault, sealed with the vault key.
-     * Anything that fails to write is put back rather than dropped.
+     * File parked captures into the open vault ([com.chronicle.app.flushPendingCaptures]
+     * owns the write-then-remove loop). While E2EE is locked nothing is
+     * flushed; anything not written stays queued.
      */
     fun flushPendingCaptures(context: Context): Int {
         val appContext = context.applicationContext
-        if (!com.chronicle.app.e2ee.E2eeManager.unlocked.value) return 0
+        val e2ee = com.chronicle.app.e2ee.E2eeManager
+        if (e2ee.isEnabled(appContext) && !e2ee.unlocked.value) return 0
         val uriStr = _folderUri.value
         if (uriStr.isNullOrBlank()) return 0
-        val repo = VaultRepository(appContext, Uri.parse(uriStr))
-        val pending = com.chronicle.app.e2ee.PendingCaptureQueue.drain(appContext)
-        if (pending.isEmpty()) return 0
-
-        val failed = mutableListOf<org.json.JSONObject>()
-        var written = 0
-        pending.forEach { obj ->
-            val sealed = com.chronicle.app.e2ee.E2eeManager.sealText(obj.optString("text"))
-            if (sealed == null) {
-                failed.add(obj)
-                return@forEach
-            }
-            val stagedNames = jsonStrings(obj.optJSONArray("images"))
-            val entry = Entry(
-                id = obj.optString("id"),
-                ts = obj.optString("ts"),
-                type = obj.optString("type", "log"),
-                text = "",
-                textEnc = sealed,
-                tags = jsonStrings(obj.optJSONArray("tags")),
-                images = emptyList(),
-                audio = emptyList(),
-                mood = if (obj.has("mood") && !obj.isNull("mood")) obj.optInt("mood") else null,
-                processed = false,
-            )
-            val imageUris = stagedNames.mapNotNull {
-                com.chronicle.app.e2ee.PendingCaptureQueue.stagedUri(appContext, it)
-            }
-            val saved = try {
-                repo.saveEntry(entry, imageUris, jsonStrings(obj.optJSONArray("audio")))
-            } catch (e: Exception) {
-                android.util.Log.w("MainViewModel", "pending capture write failed", e)
-                null
-            }
-            if (saved != null) {
-                written++
-                com.chronicle.app.e2ee.PendingCaptureQueue.clearStaged(appContext, stagedNames)
-            } else {
-                failed.add(obj)
-            }
+        if (com.chronicle.app.e2ee.PendingCaptureQueue.count(appContext) == 0) return 0
+        val vault = VaultRepository(appContext, Uri.parse(uriStr)).asCaptureVault()
+        val result = com.chronicle.app.flushPendingCaptures(appContext, vault)
+        if (result.stillQueued > 0) {
+            _userMessages.tryEmit("${result.stillQueued} queued capture(s) could not be saved yet.")
         }
-        com.chronicle.app.e2ee.PendingCaptureQueue.restore(appContext, failed)
-        if (failed.isNotEmpty()) {
-            _userMessages.tryEmit("${failed.size} queued capture(s) could not be saved yet.")
-        }
-        return written
-    }
-
-    private fun jsonStrings(arr: org.json.JSONArray?): List<String> {
-        arr ?: return emptyList()
-        return (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotEmpty() } }
+        return result.written
     }
 
     /** LAN outbox mirror (v1.11) — best-effort; Syncthing remains source of truth. */
@@ -2600,9 +2530,21 @@ class MainViewModel : ViewModel() {
                             }
                             if (existing.processed) return@withContext false
                             // Re-seal happens inside serializeEntry when unlocked.
+                            val textEnc = existing.textEnc ?: when (
+                                val seal = com.chronicle.app.e2ee.E2eeManager.sealForCapture(appContext, _text.value)
+                            ) {
+                                com.chronicle.app.e2ee.E2eeManager.CaptureSeal.Clear -> null
+                                is com.chronicle.app.e2ee.E2eeManager.CaptureSeal.Sealed -> seal.blob
+                                com.chronicle.app.e2ee.E2eeManager.CaptureSeal.Locked -> {
+                                    // A plaintext entry in a now-encrypted vault: the edit
+                                    // must not be written in the clear either.
+                                    _userMessages.tryEmit("Vault locked — unlock to edit this entry")
+                                    return@withContext false
+                                }
+                            }
                             val updated = existing.copy(
                                 text = _text.value,
-                                textEnc = existing.textEnc ?: maybeSealCapture(_text.value),
+                                textEnc = textEnc,
                                 type = _entryType.value,
                                 tags = finalTags,
                                 mood = _mood.value,
@@ -2614,20 +2556,21 @@ class MainViewModel : ViewModel() {
                             saved != null
                         } else {
                             val id = generateEntryId(now, exists = { repo.entryFileExists(it) })
-                            if (isLockedForCapture()) {
+                            val seal = com.chronicle.app.e2ee.E2eeManager.sealForCapture(appContext, _text.value)
+                            if (seal == com.chronicle.app.e2ee.E2eeManager.CaptureSeal.Locked) {
                                 // Encrypted vault with no key this session: park
                                 // it sealed rather than writing plaintext that
                                 // Syncthing would copy to every peer.
-                                val queued = queueLockedCapture(
+                                val queued = com.chronicle.app.e2ee.PendingCaptureQueue.park(
                                     appContext,
-                                    id,
-                                    tsString,
-                                    _entryType.value,
-                                    _text.value,
-                                    finalTags,
-                                    _mood.value,
-                                    _attachedImages.value,
-                                    _pendingAudioPaths.value,
+                                    id = id,
+                                    ts = tsString,
+                                    type = _entryType.value,
+                                    text = _text.value,
+                                    tags = finalTags,
+                                    mood = _mood.value,
+                                    images = _attachedImages.value,
+                                    audio = _pendingAudioPaths.value,
                                 )
                                 if (queued) {
                                     _userMessages.tryEmit("Saved securely — unlock to file it into your vault.")
@@ -2636,7 +2579,7 @@ class MainViewModel : ViewModel() {
                                 }
                                 return@withContext queued
                             }
-                            val sealedBlob = maybeSealCapture(_text.value)
+                            val sealedBlob = (seal as? com.chronicle.app.e2ee.E2eeManager.CaptureSeal.Sealed)?.blob
                             val entry = Entry(
                                 id = id,
                                 ts = tsString,
@@ -2703,10 +2646,14 @@ class MainViewModel : ViewModel() {
         val treeUri = Uri.parse(uriStr)
         val appContext = context.applicationContext
         viewModelScope.launch {
-            curationOpsMutex.withLock {
+            val appended = curationOpsMutex.withLock {
                 withContext(Dispatchers.IO) {
                     VaultRepository(appContext, treeUri).appendCurationOp(op)
                 }
+            }
+            if (!appended) {
+                // The append aborts rather than rewrite a log it could not read.
+                _userMessages.tryEmit("Couldn't save that change to the vault — try again.")
             }
             // Optimistic: reload graph with overlay
             loadBrain(appContext)

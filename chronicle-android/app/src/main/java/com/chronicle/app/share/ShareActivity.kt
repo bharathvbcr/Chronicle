@@ -33,13 +33,13 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import coil.compose.AsyncImage
 import com.chronicle.app.BiometricHelper
-import com.chronicle.app.Entry
+import com.chronicle.app.CaptureDraft
+import com.chronicle.app.CaptureOutcome
 import com.chronicle.app.VaultRepository
-import com.chronicle.app.generateEntryId
+import com.chronicle.app.asCaptureVault
 import com.chronicle.app.hasPersistedPermission
 import com.chronicle.app.ui.theme.MyApplicationTheme
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import com.chronicle.app.writeCapture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -178,63 +178,28 @@ class ShareActivity : FragmentActivity() {
                                 }
                                 saving = true
                                 scope.launch {
-                                    val ok = withContext(Dispatchers.IO) {
+                                    val outcome = withContext(Dispatchers.IO) {
                                         try {
-                                            val treeUri = Uri.parse(vault)
-                                            val repo = VaultRepository(this@ShareActivity, treeUri)
-                                            val now = ZonedDateTime.now()
-                                            val id = generateEntryId(now, exists = { repo.entryFileExists(it) })
-                                            // Seal like every other capture path. When E2EE is
-                                            // enabled but this session has no key, park the text
-                                            // sealed at rest instead of writing it in the clear —
-                                            // it is filed on the next unlock.
-                                            val manager = com.chronicle.app.e2ee.E2eeManager
-                                            val sealedBlob = manager.sealText(text)
-                                            if (manager.enabled.value && sealedBlob == null) {
-                                                val staged = imageUris.mapNotNull {
-                                                    com.chronicle.app.e2ee.PendingCaptureQueue
-                                                        .stageMedia(this@ShareActivity, it)
-                                                }
-                                                return@withContext com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(
-                                                    this@ShareActivity,
-                                                    org.json.JSONObject()
-                                                        .put("id", id)
-                                                        .put(
-                                                            "ts",
-                                                            now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                                                        )
-                                                        .put("type", "log")
-                                                        .put("text", text)
-                                                        .put("tags", org.json.JSONArray())
-                                                        .put("images", org.json.JSONArray(staged))
-                                                        .put("audio", org.json.JSONArray()),
-                                                )
-                                            }
-                                            val entry = Entry(
-                                                id = id,
-                                                ts = now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                                                type = "log",
-                                                text = if (sealedBlob != null) "" else text,
-                                                textEnc = sealedBlob,
-                                                tags = emptyList(),
-                                                processed = false,
+                                            // Sealed, parked (E2EE locked — this process
+                                            // may never have run MainActivity), or written.
+                                            writeCapture(
+                                                this@ShareActivity,
+                                                VaultRepository(this@ShareActivity, Uri.parse(vault))
+                                                    .asCaptureVault(),
+                                                CaptureDraft(text = text, imageUris = imageUris),
                                             )
-                                            val saved = repo.saveEntry(entry, imageUris)
-                                            if (saved != null) {
-                                                com.chronicle.app.net.LanOutboxWorker.enqueueEntry(
-                                                    this@ShareActivity,
-                                                    org.json.JSONObject(com.chronicle.app.serializeEntry(saved)),
-                                                )
-                                            }
-                                            saved != null
                                         } catch (e: Exception) {
                                             e.printStackTrace()
-                                            false
+                                            CaptureOutcome.Failed
                                         }
                                     }
                                     Toast.makeText(
                                         this@ShareActivity,
-                                        if (ok) "Saved" else "Save failed",
+                                        when (outcome) {
+                                            is CaptureOutcome.Saved -> "Saved"
+                                            CaptureOutcome.Parked -> "Saved securely — unlock Chronicle to file it"
+                                            CaptureOutcome.Failed -> "Save failed"
+                                        },
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                     finish()

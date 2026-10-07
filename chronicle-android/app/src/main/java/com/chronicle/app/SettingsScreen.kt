@@ -636,6 +636,10 @@ private fun E2eeSettingsSection(viewModel: MainViewModel) {
     var passphrase by remember { mutableStateOf("") }
     var showPassphrase by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    // Enable/unlock derive a key with 600k-round PBKDF2 (seconds on a
+    // mid-range phone); it runs off the main thread while this shows progress.
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     SettingsSection(title = "Encryption (E2EE)") {
         Text(
@@ -653,6 +657,7 @@ private fun E2eeSettingsSection(viewModel: MainViewModel) {
         OutlinedTextField(
             value = passphrase,
             onValueChange = { passphrase = it },
+            enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("settings_e2ee_passphrase"),
@@ -680,14 +685,18 @@ private fun E2eeSettingsSection(viewModel: MainViewModel) {
             },
         )
         Spacer(modifier = Modifier.height(8.dp))
-        // Captures taken while locked are parked sealed outside the vault; say
-        // so, otherwise they are invisible until the next unlock.
+        // Captures not yet in the vault (taken while locked, or quick captures
+        // the background worker could not write) are invisible otherwise.
         val pending = remember(enabled, unlocked, message) {
-            if (enabled) viewModel.pendingCaptureCount(context) else 0
+            viewModel.pendingCaptureCount(context)
         }
         if (pending > 0) {
             Text(
-                "$pending capture(s) saved while locked — unlock to file them into your vault.",
+                if (enabled && !unlocked) {
+                    "$pending capture(s) saved while locked — unlock to file them into your vault."
+                } else {
+                    "$pending capture(s) waiting to be filed into your vault."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("settings_e2ee_pending"),
@@ -701,14 +710,23 @@ private fun E2eeSettingsSection(viewModel: MainViewModel) {
                         onClick = {
                             if (passphrase.length < 8) {
                                 message = "Use at least 8 characters"
-                            } else if (viewModel.e2eeEnable(context, passphrase)) {
-                                message = "Encryption enabled"
-                                passphrase = ""
+                            } else {
+                                busy = true
+                                scope.launch {
+                                    try {
+                                        if (viewModel.e2eeEnable(context, passphrase)) {
+                                            message = "Encryption enabled"
+                                            passphrase = ""
+                                        }
+                                    } finally {
+                                        busy = false
+                                    }
+                                }
                             }
-                            Unit
                         },
+                        enabled = !busy,
                         modifier = Modifier.testTag("settings_e2ee_enable"),
-                    ) { Text("Enable") }
+                    ) { Text(if (busy) "Enabling…" else "Enable") }
                 }
                 unlocked -> {
                     Button(
@@ -722,18 +740,33 @@ private fun E2eeSettingsSection(viewModel: MainViewModel) {
                 else -> {
                     Button(
                         onClick = {
-                            if (viewModel.e2eeUnlock(context, passphrase)) {
-                                message = "Unlocked"
-                                passphrase = ""
-                            } else {
-                                message = "Wrong passphrase"
+                            busy = true
+                            scope.launch {
+                                try {
+                                    if (viewModel.e2eeUnlock(context, passphrase)) {
+                                        message = "Unlocked"
+                                        passphrase = ""
+                                    } else {
+                                        message = "Wrong passphrase"
+                                    }
+                                } finally {
+                                    busy = false
+                                }
                             }
                         },
-                        enabled = passphrase.isNotBlank(),
+                        enabled = passphrase.isNotBlank() && !busy,
                         modifier = Modifier.testTag("settings_e2ee_unlock"),
-                    ) { Text("Unlock") }
+                    ) { Text(if (busy) "Unlocking…" else "Unlock") }
                 }
             }
+        }
+        if (busy) {
+            Spacer(modifier = Modifier.height(8.dp))
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_e2ee_progress"),
+            )
         }
         message?.let {
             Spacer(modifier = Modifier.height(8.dp))

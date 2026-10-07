@@ -146,23 +146,30 @@ class LanOutboxWorker(
          * Append one entry (contract-shaped JSON object) to the outbox and
          * schedule delivery. No-op unless outbox mode is enabled AND paired.
          *
-         * E2EE gate (v1.11): a plaintext capture made while the vault is
-         * enabled-but-locked is NOT enqueued — the PC refuses it with 423 and
-         * the worker would drop the line as permanent. Syncthing still
-         * delivers the SAF file; once the vault is unlocked, new captures
-         * mirror again.
+         * E2EE gate (v1.11): in an encrypted vault, an entry carrying
+         * plaintext and no `text_enc` is NOT enqueued — mirroring it would put
+         * cleartext on the LAN, and the PC refuses it with 423 anyway. E2EE
+         * state is read from persisted prefs: this runs from the share sheet
+         * and worker in processes where the in-memory flag was never loaded.
+         * If that state cannot be read, nothing is mirrored (Syncthing still
+         * delivers whatever the SAF write produced).
          */
         fun enqueueEntry(context: Context, entryJson: JSONObject): Boolean {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             if (!prefs.getBoolean(KEY_OUTBOX_ENABLED, false)) return false
             if (prefs.getString("serve_base_url", "").isNullOrBlank()) return false
-            if (com.chronicle.app.e2ee.E2eeManager.enabled.value &&
-                !com.chronicle.app.e2ee.E2eeManager.unlocked.value &&
-                entryJson.optJSONObject("text_enc") == null
-            ) {
+            val plaintext = entryJson.optJSONObject("text_enc") == null &&
+                entryJson.optString("text").isNotBlank()
+            val encryptedVault = try {
+                com.chronicle.app.e2ee.E2eeManager.isEnabled(context)
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "cannot read E2EE state; not mirroring ${entryJson.opt("id")}", e)
+                return false
+            }
+            if (encryptedVault && plaintext) {
                 android.util.Log.w(
                     TAG,
-                    "vault locked; skipping LAN mirror of plaintext ${entryJson.opt("id")} (Syncthing will deliver)",
+                    "encrypted vault; refusing LAN mirror of plaintext ${entryJson.opt("id")}",
                 )
                 return false
             }

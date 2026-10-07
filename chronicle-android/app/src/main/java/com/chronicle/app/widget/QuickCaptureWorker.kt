@@ -8,10 +8,16 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.chronicle.app.Entry
+import com.chronicle.app.CaptureDraft
+import com.chronicle.app.CaptureOutcome
+import com.chronicle.app.CaptureVault
 import com.chronicle.app.VaultRepository
+import com.chronicle.app.asCaptureVault
+import com.chronicle.app.e2ee.E2eeManager
+import com.chronicle.app.e2ee.PendingCaptureQueue
 import com.chronicle.app.generateEntryId
 import com.chronicle.app.hasPersistedPermission
+import com.chronicle.app.writeCapture
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -20,77 +26,16 @@ class QuickCaptureWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
-        val text = inputData.getString(KEY_TEXT)?.trim().orEmpty()
-        if (text.isEmpty()) return Result.failure()
-
-        val prefs = applicationContext.getSharedPreferences("chronicle_prefs", Context.MODE_PRIVATE)
-        val uriStr = prefs.getString("vault_uri", null)
-        if (!hasPersistedPermission(applicationContext, uriStr)) return retryOrFail()
-
-        return try {
-            val treeUri = Uri.parse(uriStr)
-            val repo = VaultRepository(applicationContext, treeUri)
-            val now = ZonedDateTime.now()
-            val id = generateEntryId(now, exists = { repo.entryFileExists(it) })
-            val manager = com.chronicle.app.e2ee.E2eeManager
-            val sealedBlob =
-                if (manager.enabled.value) manager.sealText(text) else null
-            if (manager.enabled.value && sealedBlob == null) {
-                // Encrypted vault, no key this session. Park it sealed at rest
-                // instead of writing plaintext the user asked us to encrypt;
-                // MainViewModel.flushPendingCaptures files it on unlock.
-                val parked = com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(
-                    applicationContext,
-                    org.json.JSONObject()
-                        .put("id", id)
-                        .put("ts", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-                        .put("type", inputData.getString(KEY_TYPE) ?: "log")
-                        .put("text", text)
-                        .put(
-                            "tags",
-                            org.json.JSONArray(
-                                inputData.getStringArray(KEY_TAGS)?.toList().orEmpty(),
-                            ),
-                        )
-                        .put("images", org.json.JSONArray())
-                        .put("audio", org.json.JSONArray())
-                        .apply {
-                            inputData.getInt(KEY_MOOD, 0).takeIf { it in 1..5 }
-                                ?.let { put("mood", it) }
-                        },
-                )
-                return if (parked) Result.success() else retryOrFail()
-            }
-            val entry = Entry(
-                id = id,
-                ts = now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                type = inputData.getString(KEY_TYPE) ?: "log",
-                text = if (sealedBlob != null) "" else text,
-                textEnc = sealedBlob,
-                tags = inputData.getStringArray(KEY_TAGS)?.toList().orEmpty(),
-                mood = inputData.getInt(KEY_MOOD, 0).takeIf { it in 1..5 },
-                processed = false,
-            )
-            val saved = repo.saveEntry(entry)
-            if (saved != null) {
-                com.chronicle.app.net.LanOutboxWorker.enqueueEntry(
-                    applicationContext,
-                    org.json.JSONObject(com.chronicle.app.serializeEntry(saved)),
-                )
-                Result.success()
-            } else {
-                retryOrFail()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            retryOrFail()
-        }
-    }
-
-    /** Retry transient failures so captured text is not discarded; give up after [MAX_RETRIES]. */
-    private fun retryOrFail(): Result =
-        if (runAttemptCount > MAX_RETRIES) Result.failure() else Result.retry()
+    override suspend fun doWork(): Result = doWorkInternal(
+        applicationContext,
+        CaptureDraft(
+            text = inputData.getString(KEY_TEXT)?.trim().orEmpty(),
+            type = inputData.getString(KEY_TYPE) ?: "log",
+            tags = inputData.getStringArray(KEY_TAGS)?.toList().orEmpty(),
+            mood = inputData.getInt(KEY_MOOD, 0).takeIf { it in 1..5 },
+        ),
+        runAttemptCount,
+    )
 
     companion object {
         const val KEY_TEXT = "text"
@@ -98,7 +43,70 @@ class QuickCaptureWorker(
         const val KEY_TAGS = "tags"
         const val KEY_MOOD = "mood"
         private const val UNIQUE_PREFIX = "chronicle_quick_capture_"
-        private const val MAX_RETRIES = 5
+        internal const val MAX_RETRIES = 5
+
+        /**
+         * One attempt at writing [draft]. [openVault] is the test seam; it
+         * returns null when the folder grant is missing.
+         *
+         * Transient failures retry. After [MAX_RETRIES] the text is moved to
+         * [PendingCaptureQueue] (filed the next time the app has the vault
+         * open) and the user is notified — WorkManager would otherwise drop
+         * the input with the failed work. If even parking fails, keep
+         * retrying: the input stays in WorkManager's database, so nothing is
+         * lost.
+         */
+        internal fun doWorkInternal(
+            context: Context,
+            draft: CaptureDraft,
+            attempt: Int,
+            openVault: (Context) -> CaptureVault? = ::savedVault,
+        ): Result {
+            if (draft.text.isEmpty()) return Result.failure() // nothing to lose
+            val outcome = try {
+                writeCapture(context, openVault(context), draft)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                CaptureOutcome.Failed
+            }
+            return when (outcome) {
+                is CaptureOutcome.Saved, CaptureOutcome.Parked -> Result.success()
+                CaptureOutcome.Failed ->
+                    if (attempt < MAX_RETRIES) Result.retry() else parkAfterFinalFailure(context, draft)
+            }
+        }
+
+        private fun savedVault(context: Context): CaptureVault? {
+            val uriStr = context.getSharedPreferences("chronicle_prefs", Context.MODE_PRIVATE)
+                .getString("vault_uri", null)
+            if (!hasPersistedPermission(context, uriStr)) return null
+            return VaultRepository(context, Uri.parse(uriStr)).asCaptureVault()
+        }
+
+        private fun parkAfterFinalFailure(context: Context, draft: CaptureDraft): Result {
+            val parked = try {
+                park(context, draft)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+            runCatching { PendingCaptureQueue.notifyPending(context) }
+                .onFailure { it.printStackTrace() }
+            return if (parked) Result.success() else Result.retry()
+        }
+
+        private fun park(context: Context, draft: CaptureDraft): Boolean {
+            val now = ZonedDateTime.now()
+            return PendingCaptureQueue.park(
+                context,
+                id = generateEntryId(now),
+                ts = now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                type = draft.type,
+                text = draft.text,
+                tags = draft.tags,
+                mood = draft.mood,
+            )
+        }
 
         /** Durable save that survives process death (widget / quick-capture path). */
         fun enqueue(
@@ -110,26 +118,31 @@ class QuickCaptureWorker(
         ) {
             val trimmed = text.trim()
             if (trimmed.isEmpty()) return
+            val appContext = context.applicationContext
+            val draft = CaptureDraft(text = trimmed, type = type, tags = tags, mood = mood)
             // WorkManager input is persisted to its own database. For an
             // encrypted vault that is a second plaintext copy outside the
             // vault, written before the worker ever gets a chance to seal —
-            // so park it now and skip the worker entirely.
-            val manager = com.chronicle.app.e2ee.E2eeManager
-            if (manager.enabled.value && !manager.unlocked.value) {
-                val now = ZonedDateTime.now()
-                com.chronicle.app.e2ee.PendingCaptureQueue.enqueue(
-                    context.applicationContext,
-                    org.json.JSONObject()
-                        .put("id", generateEntryId(now, exists = { false }))
-                        .put("ts", now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
-                        .put("type", type)
-                        .put("text", trimmed)
-                        .put("tags", org.json.JSONArray(tags))
-                        .put("images", org.json.JSONArray())
-                        .put("audio", org.json.JSONArray())
-                        .apply { mood?.takeIf { it in 1..5 }?.let { put("mood", it) } },
-                )
-                return
+            // so a locked capture is parked now and skips the worker entirely.
+            // Persisted state, not the in-memory flag: see E2eeManager.isEnabled.
+            val locked = try {
+                E2eeManager.isEnabled(appContext) && !E2eeManager.unlocked.value
+            } catch (e: Exception) {
+                e.printStackTrace()
+                true // cannot tell: do not hand plaintext to WorkManager
+            }
+            if (locked) {
+                val parked = try {
+                    park(appContext, draft)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    false
+                }
+                if (parked) return
+                // Queue full or unreadable: dropping the text is worse than an
+                // app-private WorkManager copy. The worker parks or retries it
+                // until the vault is unlocked; tell the user it is waiting.
+                runCatching { PendingCaptureQueue.notifyPending(appContext) }
             }
             val request = OneTimeWorkRequestBuilder<QuickCaptureWorker>()
                 .setInputData(
@@ -141,7 +154,7 @@ class QuickCaptureWorker(
                     ),
                 )
                 .build()
-            WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
+            WorkManager.getInstance(appContext).enqueueUniqueWork(
                 UNIQUE_PREFIX + System.currentTimeMillis(),
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request,

@@ -25,9 +25,16 @@ import org.json.JSONObject
  *
  * The queue is bounded: it only grows while locked, and an unbounded encrypted
  * blob in SharedPreferences is its own problem.
+ *
+ * It also holds quick captures the background worker could not write after
+ * its final retry (no SAF grant, provider errors) — the same "not in the vault
+ * yet" state, for an unencrypted vault too. Those are filed, sealed when E2EE
+ * is on, the next time the app has the vault open.
  */
 object PendingCaptureQueue {
     const val PREF_KEY = "pending_captures_v1"
+    const val NOTIFICATION_CHANNEL = "chronicle_pending_captures"
+    const val NOTIFICATION_ID = 78
 
     /** Plenty for a locked session; refuses beyond this rather than growing without limit. */
     const val MAX_PENDING = 500
@@ -38,10 +45,20 @@ object PendingCaptureQueue {
     private const val TAG = "PendingCaptureQueue"
 
     /**
+     * Serialises read-modify-write of the queue: a park from the share sheet
+     * or quick-capture worker can race a flush's [remove] on another thread,
+     * and an unguarded pair would lose one side's change. The app runs in a
+     * single process, so an in-process lock covers every writer.
+     */
+    private val lock = Any()
+
+    /**
      * Park a capture. Returns false when the queue is full, so the caller can
      * tell the user to unlock rather than silently dropping their text.
      */
-    fun enqueue(context: Context, entry: JSONObject): Boolean {
+    fun enqueue(context: Context, entry: JSONObject): Boolean = synchronized(lock) { enqueueLocked(context, entry) }
+
+    private fun enqueueLocked(context: Context, entry: JSONObject): Boolean {
         val current = read(context)
         if (current.length() >= MAX_PENDING) {
             Log.w(TAG, "pending capture queue full ($MAX_PENDING); refusing")
@@ -56,38 +73,124 @@ object PendingCaptureQueue {
         return write(context, serialized)
     }
 
-    fun count(context: Context): Int = read(context).length()
-
     /**
-     * Remove and return everything parked. The caller is responsible for
-     * writing them to the vault; on failure it should [restore] the remainder
-     * so nothing is lost.
+     * Park one capture. [images] are content URIs, copied into app-private
+     * storage now because their read grant may be gone by the time it is
+     * filed; [audio] is already app-private. Returns false (and cleans up the
+     * staged copies) when the queue refuses it.
      */
-    fun drain(context: Context): List<JSONObject> {
-        val arr = read(context)
-        val out = ArrayList<JSONObject>(arr.length())
-        for (i in 0 until arr.length()) {
-            arr.optJSONObject(i)?.let { out.add(it) }
-        }
-        write(context, JSONArray().toString())
-        return out
+    fun park(
+        context: Context,
+        id: String,
+        ts: String,
+        type: String,
+        text: String,
+        tags: List<String>,
+        mood: Int?,
+        images: List<android.net.Uri> = emptyList(),
+        audio: List<String> = emptyList(),
+    ): Boolean {
+        val staged = images.mapNotNull { stageMedia(context, it) }
+        val obj = JSONObject()
+            .put("id", id)
+            .put("ts", ts)
+            .put("type", type)
+            .put("text", text)
+            .put("tags", JSONArray(tags))
+            .put("images", JSONArray(staged))
+            .put("audio", JSONArray(audio))
+        mood?.takeIf { it in 1..5 }?.let { obj.put("mood", it) }
+        val ok = enqueue(context, obj)
+        if (!ok) clearStaged(context, staged)
+        return ok
     }
 
-    /** Put back entries that could not be written to the vault. */
-    fun restore(context: Context, entries: List<JSONObject>) {
-        if (entries.isEmpty()) return
+    fun count(context: Context): Int = read(context).length()
+
+    /** Everything parked, oldest first, without removing anything. */
+    fun peek(context: Context): List<JSONObject> {
         val arr = read(context)
-        // Restored items go first: they are older than anything queued since.
-        val merged = JSONArray()
-        entries.forEach { merged.put(it) }
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+    }
+
+    /**
+     * Tell the user captures are waiting, from a background path with no UI.
+     * Silently dropped by the system when notifications are not permitted;
+     * the count is also shown in Settings.
+     */
+    fun notifyPending(context: Context, waiting: Int = count(context)) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        nm.createNotificationChannel(
+            android.app.NotificationChannel(
+                NOTIFICATION_CHANNEL,
+                "Captures waiting to be saved",
+                android.app.NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
+        val open = android.app.PendingIntent.getActivity(
+            context,
+            0,
+            android.content.Intent(context, com.chronicle.app.MainActivity::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = androidx.core.app.NotificationCompat.Builder(context, NOTIFICATION_CHANNEL)
+            .setSmallIcon(com.chronicle.app.R.mipmap.ic_launcher_foreground)
+            .setContentTitle("Capture not saved yet")
+            .setContentText(
+                if (waiting > 0) {
+                    "$waiting capture(s) waiting — open Chronicle to save them to your vault."
+                } else {
+                    "A capture could not be saved — open Chronicle to check your vault folder."
+                },
+            )
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(NOTIFICATION_ID, notification)
+    }
+
+    /**
+     * Drop one capture the caller has just written to the vault. Call only
+     * after the write succeeded — the queue is the capture's only copy until
+     * then, so nothing is removed up front.
+     *
+     * Matched on the whole record, not its id: parked ids are minted without
+     * a vault to check against, so two captures from the same second share
+     * one, and removing by id would delete the unwritten sibling. Exactly one
+     * matching occurrence is removed. The queue is re-read under the lock, so
+     * captures parked since the caller's [peek] are kept.
+     *
+     * Dying between the vault write and this call leaves the capture queued;
+     * the next flush writes it again beside the first copy under an `_N` id —
+     * a duplicate entry at worst, never a lost one.
+     *
+     * Returns false when the record was not found or the queue could not be
+     * persisted; the capture then stays queued.
+     */
+    fun remove(context: Context, entry: JSONObject): Boolean = synchronized(lock) { removeLocked(context, entry) }
+
+    private fun removeLocked(context: Context, entry: JSONObject): Boolean {
+        val target = entry.toString()
+        val arr = read(context)
+        val kept = JSONArray()
+        var removed = false
         for (i in 0 until arr.length()) {
-            arr.optJSONObject(i)?.let { merged.put(it) }
+            val obj = arr.optJSONObject(i) ?: continue
+            if (!removed && obj.toString() == target) {
+                removed = true
+            } else {
+                kept.put(obj)
+            }
         }
-        write(context, merged.toString())
+        if (!removed) {
+            Log.w(TAG, "written capture not found in the pending queue")
+            return false
+        }
+        return write(context, kept.toString())
     }
 
     fun clear(context: Context) {
-        write(context, JSONArray().toString())
+        synchronized(lock) { write(context, JSONArray().toString()) }
     }
 
     // -- media staging --------------------------------------------------------

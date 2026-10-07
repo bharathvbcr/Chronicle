@@ -71,6 +71,16 @@ class VaultRepository(private val context: Context, private val treeUri: Uri) {
             android.util.Log.e("VaultRepository", "Schema errors: $errors")
             return null
         }
+        // Defence in depth behind every capture path's own gate: this is the
+        // line where plaintext would reach a synced, encrypted vault. E2EE
+        // state is read from persisted prefs (the in-memory flag defaults to
+        // off in a fresh process); if it cannot be read, refuse.
+        if (entry.textEnc == null && entry.text.isNotBlank() &&
+            runCatching { com.chronicle.app.e2ee.E2eeManager.isEnabled(context) }.getOrDefault(true)
+        ) {
+            android.util.Log.e("VaultRepository", "refusing plaintext ${entry.id} in an encrypted vault")
+            return null
+        }
         val (year, month) = entryYearMonth(entry.id)
         val needsMedia = imageUris.isNotEmpty() || audioLocalPaths.isNotEmpty()
         val imgDir = if (needsMedia || imageUris.isNotEmpty()) {

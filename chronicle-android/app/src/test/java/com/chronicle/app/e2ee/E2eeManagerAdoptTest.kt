@@ -3,6 +3,7 @@ package com.chronicle.app.e2ee
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.chronicle.app.SecurePrefs
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -57,7 +58,7 @@ class E2eeManagerAdoptTest {
     }
 
     @Test
-    fun enable_adoptsExistingPcBlock_withMatchingPassphrase() {
+    fun enable_adoptsExistingPcBlock_withMatchingPassphrase() = runBlocking<Unit> {
         val block = pcBlock("mac passphrase")
         val mirror = E2eeManager.enable(context, "mac passphrase", existing = block)
 
@@ -81,7 +82,7 @@ class E2eeManagerAdoptTest {
     }
 
     @Test
-    fun enable_wrongPassphraseForPcBlock_failsAndRollsBack() {
+    fun enable_wrongPassphraseForPcBlock_failsAndRollsBack() = runBlocking<Unit> {
         val before = pcBlock("mac passphrase")
 
         val result = E2eeManager.enable(context, "wrong passphrase", existing = before)
@@ -93,7 +94,7 @@ class E2eeManagerAdoptTest {
     }
 
     @Test
-    fun enable_withoutExisting_mintsFreshParamsAndMirrorsBlock() {
+    fun enable_withoutExisting_mintsFreshParamsAndMirrorsBlock() = runBlocking<Unit> {
         val mirror = E2eeManager.enable(context, "fresh phone")
         assertNotNull(mirror)
 
@@ -103,7 +104,7 @@ class E2eeManagerAdoptTest {
     }
 
     @Test
-    fun unlock_refreshesFromStaleParams_isRejectedWhenPassphraseDiffers() {
+    fun unlock_refreshesFromStaleParams_isRejectedWhenPassphraseDiffers() = runBlocking<Unit> {
         // Phone configured under old params; PC re-setup changed the block.
         E2eeManager.enable(context, "old passphrase")
         val newBlock = pcBlock("new passphrase")

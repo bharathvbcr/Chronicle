@@ -52,32 +52,73 @@ class PendingCaptureQueueTest {
             .put("audio", JSONArray())
 
     @Test
-    fun enqueue_then_drain_round_trips_in_order() {
+    fun enqueue_then_peek_round_trips_in_order() {
         assertTrue(PendingCaptureQueue.enqueue(context, capture("a", "first secret")))
         assertTrue(PendingCaptureQueue.enqueue(context, capture("b", "second secret")))
         assertEquals(2, PendingCaptureQueue.count(context))
 
-        val drained = PendingCaptureQueue.drain(context)
-        assertEquals(listOf("a", "b"), drained.map { it.optString("id") })
-        assertEquals("first secret", drained[0].optString("text"))
-        // Draining empties the queue — the caller owns them now.
-        assertEquals(0, PendingCaptureQueue.count(context))
+        val peeked = PendingCaptureQueue.peek(context)
+        assertEquals(listOf("a", "b"), peeked.map { it.optString("id") })
+        assertEquals("first secret", peeked[0].optString("text"))
+        // Peeking removes nothing — the queue is the only copy until written.
+        assertEquals(2, PendingCaptureQueue.count(context))
     }
 
     @Test
-    fun restore_puts_failures_back_ahead_of_newer_captures() {
+    fun remove_drops_exactly_the_written_capture() {
+        PendingCaptureQueue.enqueue(context, capture("a", "first"))
+        PendingCaptureQueue.enqueue(context, capture("b", "second"))
+        val (a, _) = PendingCaptureQueue.peek(context)
+
+        assertTrue(PendingCaptureQueue.remove(context, a))
+
+        assertEquals(listOf("b"), PendingCaptureQueue.peek(context).map { it.optString("id") })
+    }
+
+    @Test
+    fun remove_matches_the_whole_record_not_just_a_shared_id() {
+        PendingCaptureQueue.enqueue(context, capture("same", "written"))
+        PendingCaptureQueue.enqueue(context, capture("same", "not written"))
+        val written = PendingCaptureQueue.peek(context).first()
+
+        assertTrue(PendingCaptureQueue.remove(context, written))
+
+        assertEquals(listOf("not written"), PendingCaptureQueue.peek(context).map { it.optString("text") })
+    }
+
+    @Test
+    fun remove_takes_one_of_two_identical_records() {
+        PendingCaptureQueue.enqueue(context, capture("dup", "same"))
+        PendingCaptureQueue.enqueue(context, capture("dup", "same"))
+
+        assertTrue(PendingCaptureQueue.remove(context, PendingCaptureQueue.peek(context).first()))
+
+        assertEquals(1, PendingCaptureQueue.count(context))
+    }
+
+    @Test
+    fun remove_keeps_captures_parked_after_the_peek_and_preserves_order() {
         PendingCaptureQueue.enqueue(context, capture("old", "older"))
-        val drained = PendingCaptureQueue.drain(context)
+        PendingCaptureQueue.enqueue(context, capture("mid", "middle"))
+        val seen = PendingCaptureQueue.peek(context)
         PendingCaptureQueue.enqueue(context, capture("new", "newer"))
 
-        PendingCaptureQueue.restore(context, drained)
+        assertTrue(PendingCaptureQueue.remove(context, seen[1]))
 
-        val all = PendingCaptureQueue.drain(context)
         assertEquals(
-            "restored items are older and must come first",
+            "older captures stay ahead of newer ones",
             listOf("old", "new"),
-            all.map { it.optString("id") },
+            PendingCaptureQueue.peek(context).map { it.optString("id") },
         )
+    }
+
+    @Test
+    fun remove_of_an_absent_record_reports_false_and_changes_nothing() {
+        PendingCaptureQueue.enqueue(context, capture("a", "kept"))
+
+        assertFalse(PendingCaptureQueue.remove(context, capture("zzz", "never parked")))
+
+        assertEquals(listOf("kept"), PendingCaptureQueue.peek(context).map { it.optString("text") })
     }
 
     @Test
@@ -135,6 +176,6 @@ class PendingCaptureQueueTest {
     fun queued_text_is_preserved_for_the_later_reseal() {
         val secret = "the combination is seven four two"
         PendingCaptureQueue.enqueue(context, capture("a", secret))
-        assertEquals(secret, PendingCaptureQueue.drain(context).single().optString("text"))
+        assertEquals(secret, PendingCaptureQueue.peek(context).single().optString("text"))
     }
 }

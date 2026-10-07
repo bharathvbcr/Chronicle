@@ -310,11 +310,21 @@ fun listChildDirs(context: Context, treeUri: Uri, dirUri: Uri): List<Pair<String
     return results
 }
 
+/**
+ * Read a document that is known to exist, throwing when it cannot be read.
+ *
+ * [readFileContent] answers null for "missing" and "unreadable" alike, which
+ * is fine for display but not for a read-modify-write: treating an unreadable
+ * file as empty and rewriting it destroys its contents.
+ */
+fun readFileContentOrThrow(context: Context, uri: Uri): String =
+    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+        inputStream.bufferedReader().use { it.readText() }
+    } ?: throw java.io.IOException("provider returned no stream for $uri")
+
 fun readFileContent(context: Context, uri: Uri): String? {
     return try {
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            inputStream.bufferedReader().use { it.readText() }
-        }
+        readFileContentOrThrow(context, uri)
     } catch (e: Exception) {
         e.printStackTrace()
         null
@@ -424,7 +434,9 @@ fun atomicAppendLine(
 ): Boolean {
     return try {
         val existing = findChildFile(context, treeUri, parentDirUri, fileName)
-        val previous = if (existing != null) readFileContent(context, existing).orEmpty() else ""
+        // An existing log that cannot be read is not an empty one: rewriting it
+        // as "" + line would replace the whole append-only history. Throw → abort.
+        val previous = if (existing != null) readFileContentOrThrow(context, existing) else ""
         val next = if (previous.isEmpty() || previous.endsWith("\n")) {
             previous + line + "\n"
         } else {

@@ -2,10 +2,13 @@ package com.chronicle.app.e2ee
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Looper
 import com.chronicle.app.SecurePrefs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
@@ -39,6 +42,50 @@ object E2eeManager {
             getPrefs(context).getBoolean("e2ee_enabled", false)
     }
 
+    /**
+     * Whether E2EE is on, read from persisted prefs (and mirrored into [enabled]).
+     *
+     * [enabled] starts false in every new process and is only loaded when
+     * MainActivity runs, so the share sheet, quick-capture worker and LAN
+     * outbox — which can run in a process MainActivity never touched — must
+     * ask this instead. Throws if the prefs cannot be read; callers treat
+     * that as "do not write".
+     */
+    fun isEnabled(context: Context): Boolean {
+        refreshEnabled(context)
+        return _enabled.value
+    }
+
+    /** What a capture path may write for a given plaintext. */
+    sealed interface CaptureSeal {
+        /** E2EE is off: the text is written as-is. */
+        data object Clear : CaptureSeal
+
+        /** E2EE is on and unlocked: write `text = ""` plus this `text_enc`. */
+        data class Sealed(val blob: JSONObject) : CaptureSeal
+
+        /** E2EE is on but this process holds no key: park it, never write it. */
+        data object Locked : CaptureSeal
+    }
+
+    /** The one decision every capture path makes before writing [plaintext]. */
+    fun sealForCapture(context: Context, plaintext: String): CaptureSeal {
+        if (!isEnabled(context)) return CaptureSeal.Clear
+        return sealText(plaintext)?.let { CaptureSeal.Sealed(it) } ?: CaptureSeal.Locked
+    }
+
+    /**
+     * PBKDF2 at [E2eeCrypto.DEFAULT_ITERATIONS] takes seconds on a mid-range
+     * phone, so key derivation refuses to run on the main thread (an ANR is
+     * the alternative). [enable] and [unlock] dispatch to [Dispatchers.Default].
+     */
+    internal fun deriveKeyOffMain(passphrase: String, salt: ByteArray, iterations: Int): ByteArray {
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "E2EE key derivation must not run on the main thread"
+        }
+        return E2eeCrypto.deriveKey(passphrase, salt, iterations)
+    }
+
     // -- setup ----------------------------------------------------------------
 
     /**
@@ -51,7 +98,15 @@ object E2eeManager {
      * Returns the config.json `e2ee` block to mirror into the vault
      * (create-only; null when adopting or already configured).
      */
-    fun enable(context: Context, passphrase: String, existing: JSONObject? = null): JSONObject? {
+    suspend fun enable(
+        context: Context,
+        passphrase: String,
+        existing: JSONObject? = null,
+    ): JSONObject? = withContext(Dispatchers.Default) {
+        enableBlocking(context, passphrase, existing)
+    }
+
+    private fun enableBlocking(context: Context, passphrase: String, existing: JSONObject?): JSONObject? {
         if (passphrase.isBlank()) return null
         val prefs = getPrefs(context)
         if (prefs.contains(PREF_KDF_SALT)) {
@@ -67,7 +122,7 @@ object E2eeManager {
             ) {
                 return null
             }
-            if (!unlock(context, passphrase)) {
+            if (!unlockBlocking(context, passphrase)) {
                 // Wrong passphrase for the Mac's key — roll back adoption so
                 // the user can retry without a half-configured state.
                 prefs.edit()
@@ -83,7 +138,7 @@ object E2eeManager {
         }
         val salt = E2eeCrypto.randomSalt()
         val iter = E2eeCrypto.DEFAULT_ITERATIONS
-        val key = E2eeCrypto.deriveKey(passphrase, salt, iter)
+        val key = deriveKeyOffMain(passphrase, salt, iter)
         val check = E2eeCrypto.makeCheckBlob(key)
 
         prefs.edit()
@@ -141,7 +196,10 @@ object E2eeManager {
     // -- session lifecycle ----------------------------------------------------
 
     /** Verify [passphrase] against the stored check blob; cache the key. */
-    fun unlock(context: Context, passphrase: String): Boolean {
+    suspend fun unlock(context: Context, passphrase: String): Boolean =
+        withContext(Dispatchers.Default) { unlockBlocking(context, passphrase) }
+
+    private fun unlockBlocking(context: Context, passphrase: String): Boolean {
         val prefs = getPrefs(context)
         val saltB64 = prefs.getString(PREF_KDF_SALT, null) ?: return false
         val iter = prefs.getInt(PREF_KDF_ITER, -1)
@@ -152,7 +210,7 @@ object E2eeManager {
             return false
         }
         val key = try {
-            E2eeCrypto.deriveKey(passphrase, salt, iter)
+            deriveKeyOffMain(passphrase, salt, iter)
         } catch (_: IllegalArgumentException) {
             return false
         }
