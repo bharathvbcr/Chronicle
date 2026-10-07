@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::brain;
 use crate::captions;
-use crate::config::{ensure_config, require_layout_version};
+use crate::config::{ensure_config, require_layout_version, require_no_e2ee};
 use crate::entries as store;
 use crate::errors::ChronicleError;
 use crate::index_store;
@@ -145,6 +145,9 @@ fn run_process_inner(
 ) -> Result<Value, ChronicleError> {
     let cfg = ensure_config(root)?;
     require_layout_version(&cfg)?;
+    // Same gate `serve` applies at startup; the `process` CLI never passes
+    // through it, and it cannot open sealed entries to file them.
+    require_no_e2ee(&cfg)?;
 
     let rt_owned;
     let rt: &crate::LlmRuntime = match deps {
@@ -179,6 +182,15 @@ fn run_process_inner(
     );
 
     for entry in unprocessed.iter_mut() {
+        // A sealed entry can arrive before the vault's e2ee config does;
+        // transcribing or captioning it would write plaintext beside it.
+        if journal::is_sealed(entry) {
+            ollama::log_line(
+                "WARNING",
+                &format!("Skipping sealed e2ee entry {} (native runtime cannot open it)", entry.id),
+            );
+            continue;
+        }
         let changed = process_entry(
             root,
             entry,
@@ -311,4 +323,114 @@ pub fn run_process(
 ) -> Result<Value, ChronicleError> {
     let root = crate::paths::resolve_chronicle_dir(dir)?;
     run_process_with_deps(&root, None, dry_run, run_brain, false)
+}
+
+/// Sealed (E2EE) captures must never become empty journal fences. The native
+/// runtime cannot open `text_enc`, and an entry is filed only once, so filing
+/// one without its prose loses that prose from `40-Journal/` for good.
+#[cfg(test)]
+mod e2ee_fail_closed_tests {
+    use super::*;
+
+    const SEALED_ID: &str = "2026-07-09_120000-an";
+    const PLAIN_ID: &str = "2026-07-09_130000-pc";
+
+    fn vault(e2ee: bool) -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("_capture/entries/2026/07")).unwrap();
+        let cfg = if e2ee {
+            r#"{"version":1,"layout_version":2,"timezone":"UTC",
+                "e2ee":{"enabled":true,"kdf":{"alg":"pbkdf2-sha256","iter":600000,"salt":"c2FsdA=="}}}"#
+        } else {
+            r#"{"version":1,"layout_version":2,"timezone":"UTC"}"#
+        };
+        std::fs::write(d.path().join("config.json"), cfg).unwrap();
+        d
+    }
+
+    fn write_entry(root: &Path, id: &str, ts: &str, text: &str, sealed: bool) -> std::path::PathBuf {
+        let mut v = json!({
+            "version": 1, "id": id, "ts": ts, "type": "log", "text": text,
+            "tags": [], "images": [], "audio": [], "processed": false,
+        });
+        if sealed {
+            v["text_enc"] = json!({"v": 1, "nonce": "bm9uY2Vub25jZTEy", "ct": "Y2lwaGVydGV4dA=="});
+        }
+        let p = root.join(format!("_capture/entries/2026/07/{id}.json"));
+        std::fs::write(&p, serde_json::to_string_pretty(&v).unwrap()).unwrap();
+        p
+    }
+
+    fn on_disk(p: &Path) -> Value {
+        serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    }
+
+    fn not_filed(v: &Value) -> bool {
+        v.get("filed").is_none_or(|f| f == &json!(false))
+    }
+
+    fn journal_text(root: &Path) -> String {
+        std::fs::read_to_string(root.join("40-Journal/2026-07-09.md")).unwrap_or_default()
+    }
+
+    #[test]
+    fn process_refuses_an_encrypted_vault_and_leaves_sealed_entries_unprocessed() {
+        let d = vault(true);
+        let p = write_entry(d.path(), SEALED_ID, "2026-07-09T12:00:00+00:00", "", true);
+
+        let err = run_process_with_deps(d.path(), None, false, false, false).unwrap_err();
+        assert!(err.to_string().contains("end-to-end encryption"), "wrong refusal: {err}");
+
+        let e = on_disk(&p);
+        assert_eq!(e["processed"], json!(false), "sealed entry was marked processed");
+        assert!(not_filed(&e), "sealed entry was filed");
+        assert!(!journal_text(d.path()).contains(SEALED_ID), "empty fence written for sealed entry");
+    }
+
+    /// Android mirrors the e2ee block into config.json create-only, and
+    /// Syncthing can deliver sealed entries before that config arrives. The
+    /// entry itself is the evidence: `text_enc` means "not ours to file".
+    #[test]
+    fn sealed_entry_is_skipped_even_when_config_does_not_say_e2ee() {
+        let d = vault(false);
+        let sealed = write_entry(d.path(), SEALED_ID, "2026-07-09T12:00:00+00:00", "", true);
+        let plain = write_entry(d.path(), PLAIN_ID, "2026-07-09T13:00:00+00:00", "a plain note", false);
+
+        let res = run_process_with_deps(d.path(), None, false, false, false).expect("plain vault processes");
+
+        let processed: Vec<&str> = res["processed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        assert_eq!(processed, vec![PLAIN_ID], "only the plaintext entry may be processed");
+
+        let s = on_disk(&sealed);
+        assert_eq!(s["processed"], json!(false), "sealed entry was marked processed");
+        assert!(not_filed(&s), "sealed entry was filed");
+        assert!(s.get("text_enc").is_some(), "ciphertext must be preserved");
+
+        assert_eq!(on_disk(&plain)["processed"], json!(true));
+        let journal = journal_text(d.path());
+        assert!(journal.contains(PLAIN_ID), "plain entry should be filed: {journal}");
+        assert!(!journal.contains(SEALED_ID), "empty fence written for sealed entry: {journal}");
+    }
+
+    /// A sealed entry already marked processed (e.g. by an older build) must
+    /// not be picked up by the stuck-entry self-heal either.
+    #[test]
+    fn processed_sealed_entry_is_not_filed_by_self_heal() {
+        let d = vault(false);
+        let p = write_entry(d.path(), SEALED_ID, "2026-07-09T12:00:00+00:00", "", true);
+        let mut v = on_disk(&p);
+        v["processed"] = json!(true);
+        std::fs::write(&p, serde_json::to_string_pretty(&v).unwrap()).unwrap();
+
+        let res = run_process_with_deps(d.path(), None, false, false, false).unwrap();
+
+        assert_eq!(res["filed"], json!([]), "self-heal filed a sealed entry: {res}");
+        assert!(not_filed(&on_disk(&p)));
+        assert!(!journal_text(d.path()).contains(SEALED_ID));
+    }
 }

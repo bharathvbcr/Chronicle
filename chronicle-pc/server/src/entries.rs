@@ -72,11 +72,12 @@ pub fn load_entry(path: &Path) -> Option<Entry> {
 pub fn save_entry(root: &Path, entry: &Entry) -> Result<PathBuf, ChronicleError> {
     // Defence in depth behind the startup gate: CLI entry points that never
     // call serve::prepare reach this owner directly, and this is the exact
-    // line where plaintext would hit the disk of an encrypted vault.
+    // line where plaintext would hit the disk of an encrypted vault. A config
+    // that cannot be read is not evidence that E2EE is off, so it refuses too
+    // (a missing config.json loads as defaults).
     if !entry.text.trim().is_empty() {
-        if let Ok(cfg) = crate::config::load_config(root) {
-            crate::config::require_no_e2ee(&cfg)?;
-        }
+        let cfg = crate::config::load_config(root)?;
+        crate::config::require_no_e2ee(&cfg)?;
     }
     let mut path = entry_path(root, &entry.id)?;
     if !path.is_file() {
@@ -209,6 +210,17 @@ mod e2ee_fail_closed_tests {
         );
         let written: Vec<_> = walkdir_json(d.path());
         assert!(written.is_empty(), "plaintext entry reached disk: {written:?}");
+    }
+
+    /// An unreadable config is not evidence that E2EE is off: refusing is the
+    /// only answer that cannot put plaintext into an encrypted vault.
+    #[test]
+    fn unreadable_config_fails_closed() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("_capture/entries")).unwrap();
+        std::fs::write(d.path().join("config.json"), "{ not json").unwrap();
+        assert!(save_entry(d.path(), &entry("a private thought")).is_err());
+        assert!(walkdir_json(d.path()).is_empty(), "plaintext entry reached disk");
     }
 
     #[test]

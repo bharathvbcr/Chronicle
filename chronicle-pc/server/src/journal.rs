@@ -76,8 +76,19 @@ pub fn on_disk_block_hash(file_text: &str, entry_id: &str) -> Option<String> {
     extract_block(file_text, entry_id).map(|b| content_hash(&b))
 }
 
-/// is_file_ready: no audio → ready; audio → needs non-empty stripped text.
+/// Sealed (E2EE, CONTRACT v1.11): the prose lives only in `text_enc`, which
+/// the native runtime has no key to open.
+pub fn is_sealed(entry: &Entry) -> bool {
+    entry.extra.get("text_enc").is_some_and(|v| !v.is_null())
+}
+
+/// is_file_ready: sealed → never (filing would write a permanent empty
+/// fence, since an entry is filed only once); no audio → ready; audio →
+/// needs non-empty stripped text.
 pub fn is_file_ready(entry: &Entry) -> bool {
+    if is_sealed(entry) {
+        return false;
+    }
     if entry.audio.is_empty() {
         return true;
     }
