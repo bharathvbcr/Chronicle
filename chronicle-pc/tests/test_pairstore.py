@@ -389,3 +389,42 @@ def test_same_stat_swap_during_ensure_reload_is_not_minted(
         pass
     assert swapped
     assert path.read_bytes() == garbage
+
+
+def test_same_stat_swap_during_pre_replace_read_is_not_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Garbage planted inside the pre-replace read must not be published over.
+
+    Both load reads agree on an object with no devices key. The read that
+    guards os.replace copies that text, then the file becomes same-sized
+    garbage and the pre-read mtime is restored before the read returns.
+    The string in hand still matches the accepted text; the bytes on disk
+    do not, and those bytes must survive. Raising PairingCorrupt is fine.
+    """
+    path = tmp_path / "pairing.json"
+    valid = b'{"version":1}'
+    garbage = b"{" + b"H" * (len(valid) - 1)
+    assert len(garbage) == len(valid)
+    path.write_bytes(valid)
+    store = PairStore(path)
+    real_read_text = Path.read_text
+    swapped = False
+
+    def read_text(self: Path, *args: object, **kwargs: object) -> str:
+        nonlocal swapped
+        text = real_read_text(self, *args, **kwargs)
+        if self == path and not swapped:
+            st = self.stat()
+            path.write_bytes(garbage)
+            os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+            swapped = True
+        return text
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    try:
+        store.ensure_default_device("phone")
+    except PairingCorrupt:
+        pass
+    assert swapped
+    assert path.read_bytes() == garbage

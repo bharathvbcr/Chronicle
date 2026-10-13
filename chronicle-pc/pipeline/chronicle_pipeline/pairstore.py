@@ -262,7 +262,12 @@ class PairStore:
         self._file_sig = self._stat_sig()
 
     def _refuse_stale_publish(self) -> None:
-        """Do not replace bytes this store did not last accept. A missing path may be created."""
+        """Do not replace bytes this store did not last accept.
+
+        A path missing at the initial lstat may be created. Otherwise publish
+        only when two reads both return the accepted text and the stat taken
+        after the second read matches the stat taken before the first.
+        """
         try:
             self.path.lstat()
         except FileNotFoundError:
@@ -271,13 +276,27 @@ class PairStore:
             raise PairingCorrupt(
                 f"refusing to replace an unreadable pairing store ({type(e).__name__})"
             ) from e
+        sig_before = self._stat_sig()
         try:
-            current = self._read_text()
+            first = self._read_text()
         except PairingCorrupt as e:
             raise PairingCorrupt(
                 "refusing to replace a pairing store that is not the accepted text"
             ) from e
-        if current != self._accepted_text:
+        try:
+            second = self._read_text()
+        except Exception as e:
+            raise PairingCorrupt(
+                "refusing to replace a pairing store that is not the accepted text"
+            ) from e
+        sig_after = self._stat_sig()
+        if (
+            sig_before is None
+            or second != first
+            or first != self._accepted_text
+            or second != self._accepted_text
+            or sig_after != sig_before
+        ):
             raise PairingCorrupt(
                 "refusing to replace a pairing store that is not the accepted text"
             )
