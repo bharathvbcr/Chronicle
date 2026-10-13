@@ -330,6 +330,39 @@ def test_poller_does_not_swallow_create_during_ignore(
     assert len(calls) == 2
 
 
+def test_poller_user_create_during_process_is_followed_up_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Production _process never calls capture_self_writes. A different file
+    # created before process returns is not the run's own write: one follow-up
+    # after the ignore window, and the poller must not adopt it into the baseline.
+    _block_watchdog(monkeypatch)
+    clock = ManualClock()
+    calls: list[float] = []
+    capture = tmp_path / "_capture"
+    own = capture / "own.txt"
+    user = capture / "user.txt"
+
+    def process() -> None:
+        calls.append(clock.time())
+        own.write_text(f"own-{len(calls)}", encoding="utf-8")
+        if len(calls) == 1:
+            user.write_text("user", encoding="utf-8")
+
+    def create_trigger() -> None:
+        (capture / "trigger.txt").write_text("trigger", encoding="utf-8")
+
+    _drive_poller(
+        tmp_path,
+        on_first_sleep=create_trigger,
+        process_fn=process,
+        index_fn=lambda: None,
+        calls=calls,
+        clock=clock,
+    )
+    assert len(calls) == 2
+
+
 def test_poller_para_ignore_window_schedules_one_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
