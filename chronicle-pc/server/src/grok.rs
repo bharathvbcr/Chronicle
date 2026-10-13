@@ -20,6 +20,21 @@ pub struct GrokProvider {
     pub cfg: ChronicleConfig,
 }
 
+/// Chat-completions body for one vision turn.
+/// `content` is one parts array (text, then image_url), not an array of that array.
+fn image_chat_payload(model: &str, prompt: &str, data_url: &str) -> Value {
+    let content = json!([
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": data_url}},
+    ]);
+    json!({
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "temperature": 0.1,
+        "max_tokens": 200,
+    })
+}
+
 fn client(read_timeout: Duration) -> Result<reqwest::blocking::Client, ChronicleError> {
     reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
@@ -137,19 +152,34 @@ impl ChatProvider for GrokProvider {
         } else {
             "image/jpeg"
         };
-        let messages = vec![json!([{
-            "type": "text",
-            "text": prompt,
-        }, {
-            "type": "image_url",
-            "image_url": {"url": format!("data:{mime};base64,{b64}")},
-        }])];
-        let payload = json!({
-            "model": self.vision_model(),
-            "messages": [{"role": "user", "content": messages}],
-            "temperature": 0.1,
-            "max_tokens": 200,
-        });
+        let data_url = format!("data:{mime};base64,{b64}");
+        let payload = image_chat_payload(&self.vision_model(), prompt, &data_url);
         self.post_chat(&payload, Duration::from_secs(300))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grok_image_content_is_one_parts_array() {
+        let data_url = "data:image/jpeg;base64,abcd";
+        let payload = image_chat_payload("grok-2-latest", "Describe this journal photo.", data_url);
+        let serialized = payload.to_string();
+        let content = &payload["messages"][0]["content"];
+        assert!(content.is_array(), "content is an array, got {content}");
+        let parts = content.as_array().expect("content is an array");
+        assert!(
+            parts.first().is_some_and(|part| part.is_object() && !part.is_array()),
+            "content[0] is the text object, not an array: {content}"
+        );
+        assert_eq!(parts[0]["type"], json!("text"));
+        assert_eq!(parts[0]["text"], json!("Describe this journal photo."));
+        assert_eq!(parts[1]["type"], json!("image_url"));
+        assert!(
+            !serialized.contains("[["),
+            "serialized JSON must not wrap the parts array: {serialized}"
+        );
     }
 }
