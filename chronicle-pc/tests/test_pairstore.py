@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import stat
 from pathlib import Path
 
 import pytest
 
-from chronicle_pipeline.pairstore import PairStore
+from chronicle_pipeline.pairstore import PairingCorrupt, PairStore
 
 
 def _store(tmp_path, name="pairing.json") -> PairStore:
@@ -61,12 +62,16 @@ def test_invalid_device_name_rejected(tmp_path) -> None:
 
 
 def test_corrupt_store_starts_empty(tmp_path) -> None:
+    # A corrupt file used to be treated as an empty store and rewritten.
+    # It must stay empty in memory and unchanged on disk.
     p = tmp_path / "pairing.json"
-    p.write_text("{ not json", encoding="utf-8")
+    raw = b"{ not json"
+    p.write_bytes(raw)
     store = PairStore(p)
     assert len(store) == 0
-    store.add_device("phone")  # recovers by rewriting
-    assert json.loads(p.read_text())["devices"]["phone"]
+    with pytest.raises(PairingCorrupt):
+        store.add_device("phone")
+    assert p.read_bytes() == raw
 
 
 def test_external_revocation_hot_reloads(tmp_path: Path) -> None:
@@ -98,3 +103,174 @@ def test_external_addition_visible_and_merge_safe(tmp_path: Path) -> None:
     store2.add_device("laptop", token="tok-laptop")
     names = {d["name"] for d in store.list_devices()}
     assert {"phone", "tablet", "laptop"} <= names
+
+
+def test_garbage_pairing_file_is_not_replaced(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Garbage bytes must survive ensure_default_device, and no device is minted."""
+    path = tmp_path / "pairing.json"
+    garbage = b"{ not json, token=super-secret-pairing-token"
+    path.write_bytes(garbage)
+    with caplog.at_level(logging.WARNING, logger="chronicle.pair"):
+        store = PairStore(path)
+        store.ensure_default_device("phone")
+    assert path.read_bytes() == garbage
+    assert len(store) == 0
+    assert store.list_devices() == []
+    assert store.token_for("phone") is None
+    assert caplog.records, "corrupt pairing store must be logged"
+    assert "super-secret-pairing-token" not in caplog.text
+    assert garbage.decode("utf-8") not in caplog.text
+
+
+def test_devices_not_object_is_not_replaced(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    raw = b'{"devices": []}'
+    path.write_bytes(raw)
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert path.read_bytes() == raw
+    assert len(store) == 0
+    assert store.list_devices() == []
+
+
+def test_missing_pairing_file_creates_one_device(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    assert not path.exists()
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert len(store) == 1
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(body["devices"], dict)
+    assert isinstance(body["devices"]["phone"], dict)
+    assert body["devices"]["phone"]["token"]
+    reloaded = PairStore(path)
+    assert len(reloaded) == 1
+    assert reloaded.token_for("phone") == store.token_for("phone")
+
+
+def test_valid_two_device_file_round_trips_add(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    path.write_text(
+        json.dumps(
+            {
+                "devices": {
+                    "phone": {"token": "tok-phone", "created": "t1"},
+                    "tablet": {"token": "tok-tablet", "created": "t2"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = PairStore(path)
+    assert store.verify("tok-phone") == "phone"
+    assert store.verify("tok-tablet") == "tablet"
+    laptop = store.add_device("laptop")
+    reloaded = PairStore(path)
+    assert reloaded.verify("tok-phone") == "phone"
+    assert reloaded.verify("tok-tablet") == "tablet"
+    assert reloaded.verify(laptop) == "laptop"
+    assert {d["name"] for d in reloaded.list_devices()} == {"phone", "tablet", "laptop"}
+
+
+def test_mutate_refuses_to_publish_over_corrupt_file(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    garbage = b"\xff\xfe not-utf8"
+    path.write_bytes(garbage)
+    store = PairStore(path)
+    with pytest.raises(PairingCorrupt, match="corrupt pairing store"):
+        store.add_device("phone")
+    with pytest.raises(PairingCorrupt, match="corrupt pairing store"):
+        store.remove_device("phone")
+    assert path.read_bytes() == garbage
+    assert len(store) == 0
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"",
+        b"   \n",
+        b"[]",
+        b"null",
+        b'"devices"',
+        b"42",
+        b'{"devices": null}',
+        b'{"devices": "phone"}',
+    ],
+)
+def test_invalid_pairing_shapes_are_not_replaced(tmp_path: Path, raw: bytes) -> None:
+    path = tmp_path / "pairing.json"
+    path.write_bytes(raw)
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert path.read_bytes() == raw
+    assert len(store) == 0
+
+
+def test_dangling_symlink_is_not_replaced(tmp_path: Path) -> None:
+    target = tmp_path / "missing-target"
+    path = tmp_path / "pairing.json"
+    path.symlink_to(target)
+    assert path.is_symlink()
+    assert not path.exists()
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert path.is_symlink()
+    assert os.readlink(path) == str(target)
+    assert not target.exists()
+    assert len(store) == 0
+    with pytest.raises(PairingCorrupt, match="corrupt pairing store"):
+        store.add_device("phone")
+    assert path.is_symlink()
+    assert not target.exists()
+
+
+def test_pairing_directory_is_not_replaced(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    path.mkdir()
+    marker = path / "keep"
+    marker.write_text("stay", encoding="utf-8")
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert path.is_dir()
+    assert marker.read_text(encoding="utf-8") == "stay"
+    assert len(store) == 0
+    with pytest.raises(PairingCorrupt, match="corrupt pairing store"):
+        store.add_device("phone")
+    assert path.is_dir()
+    assert marker.read_text(encoding="utf-8") == "stay"
+
+
+def test_valid_empty_store_still_mints_default(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    path.write_text('{"devices": {}}\n', encoding="utf-8")
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert list(body["devices"]) == ["phone"]
+    assert body["devices"]["phone"]["token"]
+
+
+def test_corrupt_store_hot_reloads_once_repaired(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    path.write_bytes(b"NOPE")
+    store = PairStore(path)
+    assert store.verify("t") is None
+    path.write_text(
+        json.dumps({"devices": {"phone": {"token": "t", "created": "c"}}}),
+        encoding="utf-8",
+    )
+    assert store.verify("t") == "phone"
+
+
+def test_symlink_to_valid_file_loads(tmp_path: Path) -> None:
+    target = tmp_path / "real-pairing.json"
+    target.write_text(
+        json.dumps({"devices": {"phone": {"token": "tok-phone", "created": "t1"}}}),
+        encoding="utf-8",
+    )
+    path = tmp_path / "pairing.json"
+    path.symlink_to(target)
+    store = PairStore(path)
+    assert store.verify("tok-phone") == "phone"
+    assert path.is_symlink()
