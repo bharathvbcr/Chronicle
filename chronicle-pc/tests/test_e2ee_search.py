@@ -165,6 +165,110 @@ def test_config_directory_hides_indexed_text(tmp_path: Path) -> None:
     assert MARKER not in _joined(docs)
 
 
+def test_dangling_config_symlink_hides_indexed_text(tmp_path: Path) -> None:
+    """config.json present as a symlink to a missing target is unreadable.
+
+    Path.exists() is false for a dangling symlink. That must not be treated
+    as an absent config (plain), or search returns the sealed marker.
+    """
+    _seed_document(tmp_path, DOC_ID, MARKER, sealed=1)
+    cfg = tmp_path / "config.json"
+    cfg.symlink_to(tmp_path / "config.json.missing")
+    assert cfg.is_symlink()
+    assert not cfg.exists()
+
+    hits = search(tmp_path, MARKER, top_k=5)
+    docs = get_documents_by_ids(tmp_path, [DOC_ID])
+    assert hits == []
+    assert docs == []
+    assert MARKER not in _joined(hits)
+    assert MARKER not in _joined(docs)
+    assert cfg.is_symlink()
+    assert not cfg.exists()
+
+
+def test_config_symlink_loop_hides_indexed_text(tmp_path: Path) -> None:
+    """A self-referential config.json symlink is present and unreadable."""
+    _seed_document(tmp_path, DOC_ID, MARKER, sealed=1)
+    cfg = tmp_path / "config.json"
+    cfg.symlink_to("config.json")
+    assert cfg.is_symlink()
+    assert not cfg.exists()
+
+    hits = search(tmp_path, MARKER, top_k=5)
+    docs = get_documents_by_ids(tmp_path, [DOC_ID])
+    assert hits == []
+    assert docs == []
+    assert MARKER not in _joined(hits)
+    assert MARKER not in _joined(docs)
+    assert cfg.is_symlink()
+    assert not cfg.exists()
+
+
+def test_symlink_to_config_directory_hides_indexed_text(tmp_path: Path) -> None:
+    _seed_document(tmp_path, DOC_ID, MARKER, sealed=1)
+    target = tmp_path / "cfg-dir"
+    target.mkdir()
+    cfg = tmp_path / "config.json"
+    cfg.symlink_to(target)
+
+    hits = search(tmp_path, MARKER, top_k=5)
+    docs = get_documents_by_ids(tmp_path, [DOC_ID])
+    assert hits == []
+    assert docs == []
+    assert MARKER not in _joined(hits)
+    assert MARKER not in _joined(docs)
+    assert cfg.is_symlink()
+    assert target.is_dir()
+
+
+def test_symlink_to_plain_config_returns_marker(tmp_path: Path) -> None:
+    real = tmp_path / "real-config.json"
+    real.write_text(
+        json.dumps({"version": 1, "layout_version": 2, "timezone": "UTC"}),
+        encoding="utf-8",
+    )
+    cfg = tmp_path / "config.json"
+    cfg.symlink_to(real)
+    _seed_document(tmp_path, DOC_ID, MARKER)
+
+    hits = search(tmp_path, MARKER, top_k=5)
+    docs = get_documents_by_ids(tmp_path, [DOC_ID])
+    assert MARKER in _joined(hits)
+    assert MARKER in _joined(docs)
+    assert cfg.is_symlink()
+    assert real.is_file()
+
+
+def test_run_index_dangling_symlink_raises_and_keeps_link(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.json"
+    cfg.symlink_to(tmp_path / "missing-config.json")
+    with pytest.raises(index_store.UnreadableVaultConfig):
+        run_index(tmp_path, force=True)
+    assert cfg.is_symlink()
+    assert not cfg.exists()
+
+
+def test_run_index_leaves_truncated_config_bytes(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.json"
+    raw = b'{"layout_version": 2, "e2ee": {'
+    cfg.write_bytes(raw)
+    with pytest.raises(index_store.UnreadableVaultConfig):
+        run_index(tmp_path, force=True)
+    assert cfg.read_bytes() == raw
+    assert cfg.is_file()
+    assert not cfg.is_symlink()
+
+
+def test_run_index_leaves_config_directory(tmp_path: Path) -> None:
+    cfg = tmp_path / "config.json"
+    cfg.mkdir()
+    with pytest.raises(index_store.UnreadableVaultConfig):
+        run_index(tmp_path, force=True)
+    assert cfg.is_dir()
+    assert not cfg.is_symlink()
+
+
 def _deny_deletes(conn: sqlite3.Connection, table: str) -> None:
     """Make the real sqlite execute fail for DELETE on one table.
 

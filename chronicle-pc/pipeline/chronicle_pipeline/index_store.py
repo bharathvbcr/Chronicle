@@ -289,6 +289,10 @@ def run_index(
     force: bool = False,
 ) -> dict:
     root = resolve_chronicle_dir(chronicle_dir)
+    if _index_posture(root) == _UNREADABLE:
+        raise UnreadableVaultConfig(
+            "vault config is unreadable; refusing to read indexed documents"
+        )
     cfg = ensure_config(root)
     embed_model = cfg.models.embed
     use_vec = _has_sqlite_vec()
@@ -319,11 +323,6 @@ def run_index(
             "would_index": len(entries) + len(note_docs),
             "dry_run": True,
         }
-
-    if _index_posture(root) == _UNREADABLE:
-        raise UnreadableVaultConfig(
-            "vault config is unreadable; refusing to read indexed documents"
-        )
 
     conn = _connect(root)
     _init_schema(conn, use_vec=use_vec)
@@ -524,12 +523,23 @@ def _index_posture(root: Path) -> str:
     Absent config, a valid object with no e2ee block, and JSON null e2ee are
     plain. Any other present config that cannot be read, parsed, or loaded as
     an e2ee block is unreadable — including a directory, empty file, non-object
-    JSON, or a broken kdf/check. Do not treat that as "never opted in".
+    JSON, or a broken kdf/check. A symlink is followed only when its target is
+    a regular file; dangling, looping, and directory links are unreadable.
+    Do not treat that as "never opted in". exists() is false for those links,
+    so the symlink check has to come first.
     """
     path = config_path(root)
-    if not path.exists():
+    if path.is_symlink():
+        try:
+            followed_file = path.is_file()
+        except OSError:
+            followed_file = False
+        if not followed_file:
+            log.warning("Vault config unreadable; refusing to return indexed text")
+            return _UNREADABLE
+    elif not path.exists():
         return _PLAIN
-    if not path.is_file():
+    elif not path.is_file():
         return _UNREADABLE
     try:
         raw = read_json(path)
