@@ -10,12 +10,21 @@ from typing import Any
 
 from . import e2ee
 from . import ollama as ollama_mod
-from .config import ensure_config
+from .config import config_path, ensure_config
 from .entries import load_all_entries
 from .kb_enrich import format_enrichment_prefix, load_enrich_cache
-from .paths import content_hash, resolve_chronicle_dir
+from .paths import content_hash, read_json, resolve_chronicle_dir
 
 log = logging.getLogger("chronicle.index")
+
+_PLAIN = "plain"
+_UNREADABLE = "unreadable"
+_UNLOCKED = "unlocked"
+_LOCKED = "locked"
+
+
+class UnreadableVaultConfig(RuntimeError):
+    """config.json cannot be trusted to decide whether index text is sealed."""
 
 # Documented choice: prefer sqlite-vec when importable; else store embeddings
 # as JSON text and compute cosine similarity in Python.
@@ -311,6 +320,11 @@ def run_index(
             "dry_run": True,
         }
 
+    if _index_posture(root) == _UNREADABLE:
+        raise UnreadableVaultConfig(
+            "vault config is unreadable; refusing to read indexed documents"
+        )
+
     conn = _connect(root)
     _init_schema(conn, use_vec=use_vec)
     conn.execute(
@@ -504,6 +518,35 @@ def kinds_for_scope(scope: str | None) -> frozenset[str] | None:
     return SCOPE_KINDS[key]
 
 
+def _index_posture(root: Path) -> str:
+    """plain, unreadable, unlocked, or locked.
+
+    Absent config, a valid object with no e2ee block, and JSON null e2ee are
+    plain. Any other present config that cannot be read, parsed, or loaded as
+    an e2ee block is unreadable — including a directory, empty file, non-object
+    JSON, or a broken kdf/check. Do not treat that as "never opted in".
+    """
+    path = config_path(root)
+    if not path.exists():
+        return _PLAIN
+    if not path.is_file():
+        return _UNREADABLE
+    try:
+        raw = read_json(path)
+    except (OSError, ValueError, UnicodeError):
+        log.warning("Vault config unreadable; refusing to return indexed text")
+        return _UNREADABLE
+    if not isinstance(raw, dict):
+        return _UNREADABLE
+    if "e2ee" not in raw or raw.get("e2ee") is None:
+        return _PLAIN
+    if e2ee.load_e2ee_config(root) is None:
+        return _UNREADABLE
+    if e2ee.is_unlocked(root):
+        return _UNLOCKED
+    return _LOCKED
+
+
 def _vec_table_ready(conn: sqlite3.Connection) -> bool:
     try:
         row = conn.execute(
@@ -534,13 +577,17 @@ def drop_sealed_if_locked(conn: sqlite3.Connection, root: Path) -> int:
     stayed on disk — without the passphrase. Every read boundary calls this, so
     the guarantee does not depend on a lock endpoint having been invoked.
     Deleting rather than filtering also removes the stale copy at rest.
-    """
-    from . import e2ee as e2ee_mod
 
-    if e2ee_mod.load_e2ee_config(root) is None:
-        return 0  # vault never opted in
-    if e2ee_mod.is_unlocked(root):
-        return 0  # caller holds the key; sealed rows are legitimately readable
+    An unreadable config is not "never opted in": raise so the caller cannot
+    SELECT document text. A sqlite error on the sealed delete, or on the vec
+    delete when that table exists, propagates after rolling back the open
+    transaction. A missing vec table is not an error.
+    """
+    posture = _index_posture(root)
+    if posture in (_PLAIN, _UNLOCKED):
+        return 0
+    if posture == _UNREADABLE:
+        raise UnreadableVaultConfig("vault config is unreadable")
     if not _ensure_sealed_column(conn):
         # Index predates the flag, so every row reads as unsealed and the cheap
         # query would silently purge nothing. Fall back to the authoritative
@@ -552,16 +599,17 @@ def drop_sealed_if_locked(conn: sqlite3.Connection, root: Path) -> int:
         if not ids:
             return 0
         conn.execute("DELETE FROM documents WHERE sealed = 1")
-        try:
+        if _vec_table_ready(conn):
             conn.executemany("DELETE FROM vec_documents WHERE id = ?", [(i,) for i in ids])
-        except sqlite3.Error:
-            pass
         conn.commit()
-        log.info("Dropped %d sealed index rows (vault is locked)", len(ids))
-        return len(ids)
-    except sqlite3.Error as e:
-        log.warning("Could not drop sealed index rows: %s", e)
-        return 0
+    except sqlite3.Error:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            log.warning("Rollback after sealed-row delete failure also failed")
+        raise
+    log.info("Dropped %d sealed index rows (vault is locked)", len(ids))
+    return len(ids)
 
 
 def search(
@@ -575,6 +623,8 @@ def search(
     ids: set[str] | frozenset[str] | list[str] | None = None,
 ) -> list[dict[str, Any]]:
     root = resolve_chronicle_dir(chronicle_dir)
+    if _index_posture(root) == _UNREADABLE:
+        return []
     cfg = ensure_config(root)
     db = index_db_path(root)
     if not db.is_file():
@@ -606,7 +656,10 @@ def search(
 
     conn = _connect(root)
     try:
-        drop_sealed_if_locked(conn, root)
+        try:
+            drop_sealed_if_locked(conn, root)
+        except UnreadableVaultConfig:
+            return []
         q_emb = ollama_mod.try_embed(query, model=cfg.models.embed) if ollama_mod.ollama_reachable() else []
 
         # Prefer sqlite-vec KNN when the extension and virtual table are available.
@@ -694,10 +747,15 @@ def get_documents_by_ids(
     wanted = list(dict.fromkeys(str(i) for i in doc_ids if i))
     if not wanted:
         return []
+    if _index_posture(root) == _UNREADABLE:
+        return []
     limit = None if text_limit is None else max(0, int(text_limit))
     conn = _connect(root)
     try:
-        drop_sealed_if_locked(conn, root)
+        try:
+            drop_sealed_if_locked(conn, root)
+        except UnreadableVaultConfig:
+            return []
         placeholders = ",".join("?" * len(wanted))
         rows = list(
             conn.execute(
@@ -737,26 +795,27 @@ def purge_locked_entries(chronicle_dir: Path | str | None) -> int:
     (CLI ``chronicle lock``, ``POST /auth/e2ee/lock``) so search/recall stay
     fail-closed against CONTRACT v1.11. Returns rows removed.
     """
-    from . import e2ee as e2ee_mod
     from .entries import iter_entry_paths
-    from .paths import read_json, resolve_chronicle_dir
 
     root = resolve_chronicle_dir(chronicle_dir)
     db = index_db_path(root)
     if not db.is_file():
         return 0
+    posture = _index_posture(root)
 
     def _is_encrypted(raw_path: Path) -> bool:
         try:
             raw = read_json(raw_path)
-        except Exception:  # noqa: BLE001 — unreadable file can't prove lock
-            return False
-        return isinstance(raw.get("text_enc"), dict)
+        except (OSError, ValueError, UnicodeError):
+            # Locked or unreadable config: an entry we cannot read is sealed.
+            # Plain config and an unlocked vault keep today's behavior.
+            return posture in (_LOCKED, _UNREADABLE)
+        return isinstance(raw, dict) and isinstance(raw.get("text_enc"), dict)
 
     locked_ids = {
         p.stem
         for p in iter_entry_paths(root)
-        if _is_encrypted(p) and not e2ee_mod.is_unlocked(root)
+        if _is_encrypted(p) and (posture == _UNREADABLE or not e2ee.is_unlocked(root))
     }
     if not locked_ids:
         return 0
