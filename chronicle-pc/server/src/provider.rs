@@ -101,39 +101,116 @@ fn host_qualifies(host: &str) -> bool {
     }
 }
 
-pub fn validate_ollama_base_url(raw: &str) -> Result<String, ChronicleError> {
+fn authority_of(url: &str) -> &str {
+    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    rest.split(['/', '?', '#']).next().unwrap_or("")
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode_once(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                out.push((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// `@` in the authority is userinfo, including `%40` and double-encoded `%2540`.
+/// reqwest sends that origin; a colon split of the same text does not.
+fn authority_has_userinfo(authority: &str) -> bool {
+    if authority.contains('@') {
+        return true;
+    }
+    let once = percent_decode_once(authority);
+    if once.contains('@') || once.to_ascii_lowercase().contains("%40") {
+        return true;
+    }
+    percent_decode_once(&once).contains('@')
+}
+
+/// `Url::host_str` keeps IPv6 brackets (`[::1]`). `host_qualifies` wants `::1`.
+fn bare_host(url: &reqwest::Url) -> Option<String> {
+    let host = url.host_str()?;
+    Some(
+        host.strip_prefix('[')
+            .and_then(|inner| inner.strip_suffix(']'))
+            .unwrap_or(host)
+            .to_string(),
+    )
+}
+
+struct CheckedBase {
+    cleaned: String,
+    url: reqwest::Url,
+    host: String,
+}
+
+fn check_base(raw: &str, empty_msg: &str, blocked: &str) -> Result<CheckedBase, ChronicleError> {
+    if raw.trim().is_empty() {
+        return Err(ChronicleError::msg(empty_msg));
+    }
     let cleaned = normalize_url(raw);
     if cleaned.is_empty() {
-        return Err(ChronicleError::msg("ollama base_url must be a non-empty URL"));
+        return Err(ChronicleError::msg(empty_msg));
     }
-    let (scheme, rest) = cleaned.split_once("://").unwrap_or(("https", cleaned.as_str()));
-    if scheme != "http" && scheme != "https" {
-        return Err(ChronicleError::msg(
-            "ollama base_url must be a private or loopback address (localhost / 127.0.0.1 / RFC1918); public hosts are blocked",
-        ));
+    // `cleaned` is what callers already receive from normalize_url. Refuse it
+    // when it still has userinfo instead of returning a rewritten origin.
+    if authority_has_userinfo(authority_of(raw.trim())) || authority_has_userinfo(authority_of(&cleaned)) {
+        return Err(ChronicleError::msg(blocked));
     }
-    let host = rest.split('/').next().unwrap_or_default();
-    let host = host.split(':').next().unwrap_or(host);
-    if !host_qualifies(host) {
-        return Err(ChronicleError::msg(
-            "ollama base_url must be a private or loopback address (localhost / 127.0.0.1 / RFC1918); public hosts are blocked",
-        ));
+    let url = reqwest::Url::parse(&cleaned).map_err(|_| ChronicleError::msg(blocked))?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(ChronicleError::msg(blocked));
     }
-    Ok(cleaned)
+    if authority_has_userinfo(authority_of(url.as_str())) {
+        return Err(ChronicleError::msg(blocked));
+    }
+    let host = bare_host(&url).ok_or_else(|| ChronicleError::msg(blocked))?;
+    Ok(CheckedBase { cleaned, url, host })
+}
+
+pub fn validate_ollama_base_url(raw: &str) -> Result<String, ChronicleError> {
+    const BLOCKED: &str = "ollama base_url must be a private or loopback address (localhost / 127.0.0.1 / RFC1918); public hosts are blocked";
+    let checked = check_base(raw, "ollama base_url must be a non-empty URL", BLOCKED)?;
+    if checked.url.scheme() != "http" && checked.url.scheme() != "https" {
+        return Err(ChronicleError::msg(BLOCKED));
+    }
+    if !host_qualifies(&checked.host) {
+        return Err(ChronicleError::msg(BLOCKED));
+    }
+    Ok(checked.cleaned)
 }
 
 pub fn validate_grok_base_url(raw: &str) -> Result<String, ChronicleError> {
-    let cleaned = normalize_url(raw);
-    let (scheme, rest) = cleaned.split_once("://").ok_or_else(|| {
-        ChronicleError::msg("grok_base_url must be https://api.x.ai (exact host); other hosts are blocked")
-    })?;
-    let host = rest.split('/').next().unwrap_or_default();
-    if scheme != "https" || host != "api.x.ai" {
-        return Err(ChronicleError::msg(
-            "grok_base_url must be https://api.x.ai (exact host); other hosts are blocked",
-        ));
+    const BLOCKED: &str =
+        "grok_base_url must be https://api.x.ai (exact host); other hosts are blocked";
+    let checked = check_base(raw, BLOCKED, BLOCKED)?;
+    if checked.url.scheme() != "https" || checked.url.host_str() != Some("api.x.ai") {
+        return Err(ChronicleError::msg(BLOCKED));
     }
-    Ok(cleaned)
+    // `Url::port` hides the https default, so explicit :443 is None and :444 is Some.
+    if matches!(checked.url.port(), Some(port) if port != 443) {
+        return Err(ChronicleError::msg(BLOCKED));
+    }
+    Ok(checked.cleaned)
 }
 
 // ---------------------------------------------------------------------------
@@ -426,5 +503,92 @@ mod vision_consent_tests {
         let cfg = cfg_with("grok", true, false);
         let (name, _p) = build_vision_provider(&cfg).expect("degrades to local, not an error");
         assert_eq!(name, "ollama");
+    }
+}
+
+#[cfg(test)]
+mod base_url_allowlist_tests {
+    use super::*;
+
+    fn returned_host_is_loopback(url: &str) -> bool {
+        let parsed = reqwest::Url::parse(url).expect("accepted url must parse");
+        let host = parsed.host_str().unwrap_or("");
+        assert_ne!(host, "[", "split host must not be the opening bracket of an IPv6 literal");
+        assert!(!url.contains('@'), "returned url must not contain userinfo");
+        let bare = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')).unwrap_or(host);
+        bare.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    }
+
+    #[test]
+    fn validate_ollama_base_url_rejects_userinfo() {
+        for raw in [
+            "http://127.0.0.1:11434@evil.example/",
+            "http://user:pass@127.0.0.1:11434/",
+            "http://127.0.0.1:11434%40evil.example/",
+            "https://evil.example@127.0.0.1/",
+            "http://127.0.0.1%2540evil.example/",
+            "http://user%40x:pw%40y@127.0.0.1:11434/",
+        ] {
+            assert!(validate_ollama_base_url(raw).is_err(), "expected Err for {raw}");
+        }
+    }
+
+    #[test]
+    fn validate_ollama_base_url_accepts_ipv6_loopback() {
+        let with_port = validate_ollama_base_url("http://[::1]:11434/").expect("ipv6 loopback with port");
+        assert_eq!(with_port, "http://[::1]:11434");
+        assert!(returned_host_is_loopback(&with_port), "{with_port}");
+
+        let bare = validate_ollama_base_url("http://[::1]/").expect("ipv6 loopback");
+        assert_eq!(bare, "http://[::1]");
+        assert!(returned_host_is_loopback(&bare), "{bare}");
+    }
+
+    #[test]
+    fn validate_grok_base_url_port_and_userinfo() {
+        assert_eq!(validate_grok_base_url("https://api.x.ai").expect("host"), "https://api.x.ai");
+        assert_eq!(validate_grok_base_url("https://api.x.ai/").expect("slash"), "https://api.x.ai");
+        assert_eq!(
+            validate_grok_base_url("https://api.x.ai:443").expect("port 443"),
+            "https://api.x.ai:443"
+        );
+        assert_eq!(
+            validate_grok_base_url("https://api.x.ai:443/").expect("port 443 slash"),
+            "https://api.x.ai:443"
+        );
+        // Default config path must survive; do not rewrite it to the origin alone.
+        assert_eq!(
+            validate_grok_base_url("https://api.x.ai/v1").expect("v1 path"),
+            "https://api.x.ai/v1"
+        );
+        assert!(validate_grok_base_url("https://api.x.ai:444/").is_err());
+        assert!(validate_grok_base_url("https://api.x.ai:443@evil.example/").is_err());
+        assert!(validate_grok_base_url("http://api.x.ai/").is_err());
+        assert!(validate_grok_base_url("").is_err());
+    }
+
+    #[test]
+    fn validate_ollama_base_url_blocks_public_allows_loopback() {
+        assert!(validate_ollama_base_url("https://evil.example/").is_err());
+        assert!(validate_ollama_base_url("").is_err());
+        assert!(validate_ollama_base_url("   ").is_err());
+        assert_eq!(
+            validate_ollama_base_url("http://127.0.0.1:11434/").expect("loopback"),
+            "http://127.0.0.1:11434"
+        );
+        assert_eq!(
+            validate_ollama_base_url("http://127.0.0.1:11434").expect("loopback no slash"),
+            "http://127.0.0.1:11434"
+        );
+        assert!(returned_host_is_loopback(
+            &validate_ollama_base_url("http://127.0.0.1:11434/").unwrap()
+        ));
+        // Existing private and link-local literals stay allowed. No new public hosts.
+        assert!(validate_ollama_base_url("http://10.1.2.3:11434/").is_ok());
+        assert!(validate_ollama_base_url("http://192.168.1.9/").is_ok());
+        assert!(validate_ollama_base_url("http://172.16.0.4/").is_ok());
+        assert!(validate_ollama_base_url("http://169.254.1.1/").is_ok());
+        assert!(validate_ollama_base_url("http://8.8.8.8/").is_err());
+        assert!(validate_ollama_base_url("http://localhost:11434").is_ok());
     }
 }
