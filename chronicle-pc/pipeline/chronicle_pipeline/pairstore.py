@@ -52,6 +52,7 @@ class PairStore:
         self._lock = threading.RLock()
         self._devices: dict[str, dict] = {}
         self._corrupt: str | None = None
+        self._accepted_text: str | None = None
         self._file_sig: tuple[int, int] | None = None  # (st_mtime_ns, st_size)
         self._load()
 
@@ -106,7 +107,7 @@ class PairStore:
             return
         sig_before = self._stat_sig()
         try:
-            devices = self._read_devices()
+            text = self._read_text()
         except FileNotFoundError:
             if self._stat_sig() is not None:
                 self._note_torn_read()
@@ -114,42 +115,86 @@ class PairStore:
             self._set_missing()
             return
         except PairingCorrupt as e:
-            sig_after = self._stat_sig()
-            if sig_before != sig_after:
+            if not self._read_error_is_stable(sig_before):
                 self._note_torn_read()
                 return
-            self._mark_corrupt(str(e), sig_after)
+            self._mark_corrupt(str(e), sig_before)
             return
-        sig_after = self._stat_sig()
-        if sig_before != sig_after:
-            # Bytes moved between the read and this stat. Do not keep the
-            # devices we just parsed, and do not pin _file_sig to the new
-            # bytes — the next public call has to read them itself.
+        try:
+            devices = self._parse_devices(text)
+        except PairingCorrupt as e:
+            sig = self._stable_sig(text, sig_before)
+            if sig is None:
+                self._note_torn_read()
+                return
+            self._mark_corrupt(str(e), sig)
+            return
+        sig = self._stable_sig(text, sig_before)
+        if sig is None:
+            # mtime and size are not content identity. A second read that
+            # disagrees, or a stat that moved, is a torn read: do not keep
+            # this parse and do not pin _file_sig to bytes we did not accept.
             self._note_torn_read()
             return
         self._devices = devices
         self._corrupt = None
-        self._file_sig = sig_after
+        self._accepted_text = text
+        self._file_sig = sig
+
+    def _stable_sig(
+        self, text: str, sig_before: tuple[int, int] | None
+    ) -> tuple[int, int] | None:
+        """Signature of `text` only if a second read returns it and the stat matches.
+
+        Equal (mtime, size) alone is not proof the bytes are unchanged.
+        """
+        if sig_before is None:
+            return None
+        try:
+            again = self._read_text()
+        except (OSError, UnicodeDecodeError, PairingCorrupt):
+            return None
+        if again != text:
+            return None
+        sig_after = self._stat_sig()
+        if sig_after != sig_before:
+            return None
+        return sig_after
+
+    def _read_error_is_stable(self, sig_before: tuple[int, int] | None) -> bool:
+        """True when a non-text path still fails the same way and the stat matches."""
+        if sig_before is None or self._stat_sig() != sig_before:
+            return False
+        try:
+            self._read_text()
+        except PairingCorrupt:
+            return self._stat_sig() == sig_before
+        except (OSError, UnicodeDecodeError):
+            return False
+        return False
 
     def _set_missing(self) -> None:
         self._devices = {}
         self._corrupt = None
+        self._accepted_text = None
         self._file_sig = None
 
     def _note_torn_read(self) -> None:
         self._devices = {}
         self._corrupt = None
+        self._accepted_text = None
         self._file_sig = _FORCE_RELOAD_SIG
         _LOG.warning("pairing store changed while reading; will reload")
 
     def _mark_corrupt(self, reason: str, sig: tuple[int, int] | None) -> None:
         self._devices = {}
         self._corrupt = reason
+        self._accepted_text = None
         self._file_sig = sig
         _LOG.warning("corrupt pairing store; leaving it unchanged (%s)", reason)
 
-    def _read_devices(self) -> dict[str, dict]:
-        """Return devices from a valid pairing file, or raise PairingCorrupt."""
+    def _read_text(self) -> str:
+        """Return the file text, or raise PairingCorrupt for a path that is not one."""
         listed = self.path.lstat()
         if stat.S_ISLNK(listed.st_mode):
             try:
@@ -166,11 +211,14 @@ class PairStore:
         if not stat.S_ISREG(mode):
             raise PairingCorrupt("pairing store path is not a regular file")
         try:
-            text = self.path.read_text(encoding="utf-8")
+            return self.path.read_text(encoding="utf-8")
         except UnicodeDecodeError as e:
             raise PairingCorrupt("pairing store is not valid UTF-8") from e
         except OSError as e:
             raise PairingCorrupt(f"pairing store unreadable ({type(e).__name__})") from e
+
+    def _parse_devices(self, text: str) -> dict[str, dict]:
+        """Return devices from pairing text, or raise PairingCorrupt."""
         if not text.strip():
             raise PairingCorrupt("pairing store is empty")
         try:
@@ -194,14 +242,15 @@ class PairStore:
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"devices": self._devices}
+        body = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
         fd, tmp = tempfile.mkstemp(
             prefix=f".{self.path.name}.", suffix=".tmp", dir=str(self.path.parent)
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, ensure_ascii=False)
-                f.write("\n")
+                f.write(body)
             os.chmod(tmp, 0o600)
+            self._refuse_stale_publish()
             os.replace(tmp, self.path)
         except Exception:
             try:
@@ -209,7 +258,29 @@ class PairStore:
             except OSError:
                 pass
             raise
+        self._accepted_text = body
         self._file_sig = self._stat_sig()
+
+    def _refuse_stale_publish(self) -> None:
+        """Do not replace bytes this store did not last accept. A missing path may be created."""
+        try:
+            self.path.lstat()
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            raise PairingCorrupt(
+                f"refusing to replace an unreadable pairing store ({type(e).__name__})"
+            ) from e
+        try:
+            current = self._read_text()
+        except PairingCorrupt as e:
+            raise PairingCorrupt(
+                "refusing to replace a pairing store that is not the accepted text"
+            ) from e
+        if current != self._accepted_text:
+            raise PairingCorrupt(
+                "refusing to replace a pairing store that is not the accepted text"
+            )
 
     def _locked_mutate(self, mutate) -> None:
         """Read-modify-write under a cross-process advisory lock.

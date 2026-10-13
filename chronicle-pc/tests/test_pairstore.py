@@ -350,3 +350,42 @@ def test_symlink_to_valid_file_loads(tmp_path: Path) -> None:
     store = PairStore(path)
     assert store.verify("tok-phone") == "phone"
     assert path.is_symlink()
+
+
+def test_same_stat_swap_during_ensure_reload_is_not_minted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Restoring mtime after a same-size swap must not look like a stable read.
+
+    Init sees a missing path. The file is then a valid object with no devices.
+    The read inside ensure_default_device's reload returns that object, then
+    the bytes become same-sized garbage with the pre-read mtime restored.
+    Post-read stat matches, so the empty parse is kept and ensure mints over
+    the garbage. Those bytes must survive; raising PairingCorrupt is fine.
+    """
+    path = tmp_path / "pairing.json"
+    store = PairStore(path)
+    valid = b'{"version":1}'
+    garbage = b"{" + b"G" * (len(valid) - 1)
+    assert len(garbage) == len(valid)
+    path.write_bytes(valid)
+    real_read_text = Path.read_text
+    swapped = False
+
+    def read_text(self: Path, *args: object, **kwargs: object) -> str:
+        nonlocal swapped
+        text = real_read_text(self, *args, **kwargs)
+        if self == path and not swapped:
+            st = self.stat()
+            path.write_bytes(garbage)
+            os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+            swapped = True
+        return text
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    try:
+        store.ensure_default_device("phone")
+    except PairingCorrupt:
+        pass
+    assert swapped
+    assert path.read_bytes() == garbage
