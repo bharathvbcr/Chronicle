@@ -294,6 +294,24 @@ def test_prefs_primary_double_slash_does_not_tar(tmp_path: Path) -> None:
     assert "PHONE_DIR=/sdcard" not in blob
 
 
+def test_prefs_primary_empty_does_not_fall_through_to_probe(tmp_path: Path) -> None:
+    proc, log, _marker = _run(
+        tmp_path,
+        ["--skip-process", "--skip-launch", "--skip-android"],
+        manifest=[
+            "dir /sdcard/Chronicle",
+            "file /sdcard/Chronicle/config.json",
+            "dir /sdcard/Chronicle/_capture",
+        ],
+        prefs_xml=_prefs("primary%3A"),
+    )
+    blob = _blob(proc)
+    assert proc.returncode != 0
+    assert "tar -xf" not in log
+    assert "phone dir from probe" not in blob
+    assert "MD5 match" not in blob
+
+
 @pytest.mark.parametrize("phone_dir", ROOTS)
 def test_phone_dir_storage_root_refused(tmp_path: Path, phone_dir: str) -> None:
     proc, log, _marker = _run(
@@ -332,6 +350,70 @@ def test_phone_dir_storage_root_refused_even_if_forced(tmp_path: Path, phone_dir
     assert proc.returncode != 0
     assert "tar -xf" not in log
     assert "unknown flag" not in blob
+    assert "refusing phone vault root" in blob
+
+
+@pytest.mark.parametrize("phone_dir", ("/", "/sdcard/.."))
+def test_normalized_filesystem_root_refused_when_forced(tmp_path: Path, phone_dir: str) -> None:
+    proc, log, _marker = _run(
+        tmp_path,
+        [
+            "--skip-process",
+            "--skip-launch",
+            "--skip-android",
+            "--force-unmarked-dir",
+            "--phone-dir",
+            phone_dir,
+        ],
+        manifest=["dir /"],
+    )
+    blob = _blob(proc)
+    assert proc.returncode != 0
+    assert "tar -xf" not in log
+    assert "unknown flag" not in blob
+    assert "refusing phone vault root" in blob
+    assert "MD5 match" not in blob
+
+
+def test_parent_of_emulated_zero_keeps_slash_separators(tmp_path: Path) -> None:
+    proc, log, _marker = _run(
+        tmp_path,
+        [
+            "--skip-process",
+            "--skip-launch",
+            "--skip-android",
+            "--force-unmarked-dir",
+            "--phone-dir",
+            "/storage/emulated/0/..",
+        ],
+        manifest=["dir /storage/emulated"],
+    )
+    blob = _blob(proc)
+    assert "unknown flag" not in blob
+    assert "storage emulated" not in log
+    assert "storage emulated" not in blob
+    assert "tar -xf" in log
+    assert "-C '/storage/emulated'" in log
+    assert "PHONE_DIR=/storage/emulated" in blob
+    assert proc.returncode == 0
+
+
+def test_dotdot_back_to_sdcard_root_is_still_refused(tmp_path: Path) -> None:
+    proc, log, _marker = _run(
+        tmp_path,
+        [
+            "--skip-process",
+            "--skip-launch",
+            "--skip-android",
+            "--force-unmarked-dir",
+            "--phone-dir",
+            "/sdcard/../sdcard",
+        ],
+        manifest=["dir /sdcard", "file /sdcard/config.json", "dir /sdcard/_capture"],
+    )
+    blob = _blob(proc)
+    assert proc.returncode != 0
+    assert "tar -xf" not in log
     assert "refusing phone vault root" in blob
 
 

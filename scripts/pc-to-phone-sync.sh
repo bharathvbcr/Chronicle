@@ -242,7 +242,7 @@ phone_dir_looks_like_vault() {
 
 decode_vault_uri_to_path() {
   # Best-effort: run-as prefs → primary: External Storage only.
-  local xml path
+  local xml path py_status=0
   if [[ "$CURRENT_USER" != "0" ]]; then
     warn "non-user-0 (user=$CURRENT_USER); prefs decode skipped — use --phone-dir"
     return 1
@@ -276,7 +276,14 @@ if rel == "":
     sys.exit(4)
 print("/sdcard/" + rel)
 '
-  )" || return 1
+  )" || py_status=$?
+  # Exit 4 is a hard failure: an empty relative tree id must not fall through to probe.
+  if [[ "$py_status" -eq 4 ]]; then
+    return 4
+  fi
+  if [[ "$py_status" -ne 0 ]]; then
+    return 1
+  fi
   [[ -n "$path" ]] || return 1
   if adb shell "test -d $(shq "$path")" >/dev/null 2>&1; then
     echo "$path"
@@ -288,42 +295,61 @@ print("/sdcard/" + rel)
 # Lexical only: no realpath and no adb. Trailing slashes, "." and ".." collapse.
 normalize_phone_path() (
   set -f
-  local p="$1" seg abs=0
-  local -a parts=()
+  local p="$1" seg abs=0 joined
+  local -a parts=() segs=()
   case "$p" in
     /*) abs=1 ;;
   esac
   while [[ "$p" == */ && "$p" != "/" ]]; do
     p="${p%/}"
   done
+  # Split on "/" only. Pop ".." with the default IFS: bash 3.2 joins a
+  # ${array[@]:offset:length} slice on a space while IFS is "/".
   local IFS=/
   for seg in $p; do
-    case "$seg" in
-      ""|.) continue ;;
-      ..)
-        if [[ ${#parts[@]} -gt 0 ]]; then
-          parts=("${parts[@]:0:${#parts[@]}-1}")
-        fi
-        ;;
-      *) parts+=("$seg") ;;
-    esac
+    segs+=("$seg")
   done
+  IFS=$' \t\n'
+  # bash 3.2 with set -u rejects "${array[@]}" when the array is empty.
+  if [[ ${#segs[@]} -gt 0 ]]; then
+    for seg in "${segs[@]}"; do
+      case "$seg" in
+        ""|.) continue ;;
+        ..)
+          if [[ ${#parts[@]} -gt 1 ]]; then
+            parts=("${parts[@]:0:${#parts[@]}-1}")
+          elif [[ ${#parts[@]} -eq 1 ]]; then
+            parts=()
+          fi
+          ;;
+        *) parts+=("$seg") ;;
+      esac
+    done
+  fi
+  joined=""
+  if [[ ${#parts[@]} -gt 0 ]]; then
+    for seg in "${parts[@]}"; do
+      if [[ -z "$joined" ]]; then
+        joined="$seg"
+      else
+        joined="${joined}/${seg}"
+      fi
+    done
+  fi
   if [[ "$abs" -eq 1 ]]; then
-    if [[ ${#parts[@]} -eq 0 ]]; then
+    if [[ -z "$joined" ]]; then
       printf '/\n'
     else
-      printf '/%s\n' "${parts[*]}"
+      printf '/%s\n' "$joined"
     fi
-  elif [[ ${#parts[@]} -eq 0 ]]; then
-    printf '\n'
   else
-    printf '%s\n' "${parts[*]}"
+    printf '%s\n' "$joined"
   fi
 )
 
 phone_dir_is_storage_root() {
   case "$1" in
-    /sdcard|/storage/emulated/0) return 0 ;;
+    /|/sdcard|/storage/emulated/0) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -345,19 +371,26 @@ probe_phone_dirs() {
 }
 
 resolve_phone_dir() {
-  local found
+  local found decode_rc=0
   if [[ -n "$PHONE_DIR_FLAG" ]]; then
     PHONE_DIR="$PHONE_DIR_FLAG"
   elif [[ -n "${CHRONICLE_PHONE_DIR:-}" ]]; then
     PHONE_DIR="$CHRONICLE_PHONE_DIR"
-  elif found="$(decode_vault_uri_to_path)"; then
-    PHONE_DIR="$found"
-    ok "phone dir from vault_uri prefs: $PHONE_DIR"
-  elif found="$(probe_phone_dirs)"; then
-    PHONE_DIR="$found"
-    ok "phone dir from probe: $PHONE_DIR"
   else
-    die "could not resolve phone vault dir. Set --phone-dir or CHRONICLE_PHONE_DIR (e.g. /sdcard/Chronicle). Prefs auto-discover needs a prior debug install + folder pick."
+    # decode runs in this substitution, so a hard failure must be a status the
+    # parent can see. return 4 is an empty relative tree id; do not probe.
+    found="$(decode_vault_uri_to_path)" || decode_rc=$?
+    if [[ "$decode_rc" -eq 0 ]]; then
+      PHONE_DIR="$found"
+      ok "phone dir from vault_uri prefs: $PHONE_DIR"
+    elif [[ "$decode_rc" -eq 4 ]]; then
+      die "vault_uri has an empty relative path"
+    elif found="$(probe_phone_dirs)"; then
+      PHONE_DIR="$found"
+      ok "phone dir from probe: $PHONE_DIR"
+    else
+      die "could not resolve phone vault dir. Set --phone-dir or CHRONICLE_PHONE_DIR (e.g. /sdcard/Chronicle). Prefs auto-discover needs a prior debug install + folder pick."
+    fi
   fi
 
   if [[ "$CURRENT_USER" != "0" && -z "$PHONE_DIR_FLAG" && -z "${CHRONICLE_PHONE_DIR:-}" ]]; then
