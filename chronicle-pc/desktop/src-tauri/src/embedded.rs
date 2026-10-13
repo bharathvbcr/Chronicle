@@ -5,6 +5,8 @@
 //! graceful drain. `request_restart` drives both the Retry button and quit.
 
 use serde::Serialize;
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -92,11 +94,80 @@ fn walk_for_pc_root(start: &std::path::Path) -> Option<PathBuf> {
     None
 }
 
-pub fn pc_root_support_file() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/"))
-        .join("Library/Application Support/Chronicle/pc_root")
+type EnvMap = HashMap<String, OsString>;
+
+fn process_env() -> EnvMap {
+    std::env::vars_os()
+        .filter_map(|(k, v)| k.into_string().ok().map(|k| (k, v)))
+        .collect()
+}
+
+fn env_nonempty<'a>(env: &'a EnvMap, key: &str) -> Option<&'a OsStr> {
+    let value = env.get(key)?;
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.as_os_str())
+    }
+}
+
+fn absolute_base(env: &EnvMap, key: &str) -> Option<PathBuf> {
+    let value = env_nonempty(env, key)?;
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn support_file_for(os: &str, env: &EnvMap) -> Option<PathBuf> {
+    let base = match os {
+        "macos" => absolute_base(env, "HOME").unwrap_or_else(|| PathBuf::from("/")),
+        "windows" => {
+            if let Some(base) = absolute_base(env, "APPDATA") {
+                base
+            } else if let Some(base) = absolute_base(env, "LOCALAPPDATA") {
+                base
+            } else if let Some(profile) = absolute_base(env, "USERPROFILE") {
+                profile.join("AppData").join("Roaming")
+            } else if let Some(home) = absolute_base(env, "HOME") {
+                home.join("AppData").join("Roaming")
+            } else {
+                return None;
+            }
+        }
+        _ => {
+            // Linux and any other host: XDG config, never macOS Library.
+            if let Some(xdg) = absolute_base(env, "XDG_CONFIG_HOME") {
+                xdg
+            } else if let Some(home) = absolute_base(env, "HOME") {
+                home.join(".config")
+            } else {
+                return None;
+            }
+        }
+    };
+    if os == "macos" {
+        Some(base.join("Library/Application Support/Chronicle/pc_root"))
+    } else {
+        Some(base.join("Chronicle").join("pc_root"))
+    }
+}
+
+fn vault_candidate_for(os: &str, env: &EnvMap) -> Option<PathBuf> {
+    let base = match os {
+        // HOME unset stays `/Chronicle`, matching the previous macOS shell.
+        "macos" => absolute_base(env, "HOME").unwrap_or_else(|| PathBuf::from("/")),
+        "windows" => absolute_base(env, "USERPROFILE").or_else(|| absolute_base(env, "HOME"))?,
+        // Do not move an existing Syncthing vault under XDG_DATA_HOME.
+        _ => absolute_base(env, "HOME")?,
+    };
+    Some(base.join("Chronicle"))
+}
+
+pub fn pc_root_support_file() -> Option<PathBuf> {
+    support_file_for(std::env::consts::OS, &process_env())
 }
 
 fn read_persisted_pc_root(support_file: &Path) -> Option<PathBuf> {
@@ -136,8 +207,10 @@ pub fn pc_root() -> Option<PathBuf> {
     }
     // Persisted hint from Start Chronicle.command / previous installs —
     // essential when the app lives in /Applications (cwd=/, no env).
-    if let Some(persisted) = read_persisted_pc_root(&pc_root_support_file()) {
-        return Some(persisted);
+    if let Some(support) = pc_root_support_file() {
+        if let Some(persisted) = read_persisted_pc_root(&support) {
+            return Some(persisted);
+        }
     }
     let cwd = std::env::current_dir().ok()?;
     if is_valid_pc_root(&cwd) {
@@ -156,24 +229,45 @@ pub fn pc_root() -> Option<PathBuf> {
     None
 }
 
-pub fn resolve_vault_dir(pc: &std::path::Path) -> Result<PathBuf, String> {
-    if let Ok(env) = std::env::var("CHRONICLE_DIR") {
-        let p = PathBuf::from(env.trim());
-        if p.is_dir() {
-            return Ok(p);
-        }
-        return Err(format!("CHRONICLE_DIR is not a directory: {}", p.display()));
+fn chronicle_dir_override(env: &EnvMap) -> Result<Option<PathBuf>, String> {
+    let Some(raw) = env.get("CHRONICLE_DIR") else {
+        return Ok(None);
+    };
+    if raw.is_empty() {
+        return Ok(None);
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
-    let home_vault = home.join("Chronicle");
-    if home_vault.is_dir() {
-        return Ok(home_vault);
+    let Some(text) = raw.to_str() else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(text.trim());
+    if path.is_dir() {
+        Ok(Some(path))
+    } else {
+        Err(format!(
+            "CHRONICLE_DIR is not a directory: {}",
+            path.display()
+        ))
+    }
+}
+
+fn resolve_vault_dir_from(os: &str, env: &EnvMap, pc: &Path) -> Result<PathBuf, String> {
+    if let Some(dir) = chronicle_dir_override(env)? {
+        return Ok(dir);
+    }
+    if let Some(home_vault) = vault_candidate_for(os, env) {
+        if home_vault.is_dir() {
+            return Ok(home_vault);
+        }
     }
     let demo = pc.parent().map(|r| r.join("demo-vault"));
     if demo.as_ref().is_some_and(|d| d.is_dir()) {
         return Ok(demo.unwrap());
     }
     Err("Set CHRONICLE_DIR to your Syncthing Chronicle folder (e.g. ~/Chronicle).".into())
+}
+
+pub fn resolve_vault_dir(pc: &std::path::Path) -> Result<PathBuf, String> {
+    resolve_vault_dir_from(std::env::consts::OS, &process_env(), pc)
 }
 
 /// Boot the embedded server on the async runtime.
@@ -295,4 +389,290 @@ pub fn boot(state: SharedServer, handle: tauri::AppHandle) {
         g.stop_signal();
     });
     spawn_server(state, handle);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_map(pairs: &[(&str, &str)]) -> EnvMap {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), OsString::from(*value)))
+            .collect()
+    }
+
+    fn assert_no_library(path: &Path) {
+        assert!(
+            path.components().all(|c| c.as_os_str() != "Library"),
+            "path must not contain Library: {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn macos_home_support_uses_library_and_ignores_userprofile() {
+        let home = PathBuf::from("/Users/me");
+        let env = env_map(&[
+            ("HOME", "/Users/me"),
+            ("USERPROFILE", "/Users/ignored"),
+        ]);
+        assert_eq!(
+            support_file_for("macos", &env),
+            Some(home.join("Library/Application Support/Chronicle/pc_root"))
+        );
+        assert_eq!(vault_candidate_for("macos", &env), Some(home.join("Chronicle")));
+    }
+
+    #[test]
+    fn windows_appdata_support_ignores_library_home_and_vault_uses_userprofile() {
+        let appdata = PathBuf::from("/Users/me/AppData/Roaming");
+        let profile = PathBuf::from("/Users/me");
+        let env = env_map(&[
+            ("APPDATA", "/Users/me/AppData/Roaming"),
+            ("HOME", "/Users/me/Library/Application Support"),
+            ("USERPROFILE", "/Users/me"),
+        ]);
+        let support = support_file_for("windows", &env).unwrap();
+        assert_eq!(support, appdata.join("Chronicle").join("pc_root"));
+        assert_no_library(&support);
+        assert_eq!(
+            vault_candidate_for("windows", &env),
+            Some(profile.join("Chronicle"))
+        );
+    }
+
+    #[test]
+    fn windows_localappdata_only_support() {
+        let local = PathBuf::from("/Users/me/AppData/Local");
+        let env = env_map(&[("LOCALAPPDATA", "/Users/me/AppData/Local")]);
+        assert_eq!(
+            support_file_for("windows", &env),
+            Some(local.join("Chronicle").join("pc_root"))
+        );
+    }
+
+    #[test]
+    fn windows_userprofile_roaming_before_home() {
+        let profile = PathBuf::from("/Users/me");
+        let env = env_map(&[
+            ("USERPROFILE", "/Users/me"),
+            ("HOME", "/home/other"),
+        ]);
+        assert_eq!(
+            support_file_for("windows", &env),
+            Some(
+                profile
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("Chronicle")
+                    .join("pc_root")
+            )
+        );
+        assert_eq!(
+            vault_candidate_for("windows", &env),
+            Some(profile.join("Chronicle"))
+        );
+    }
+
+    #[test]
+    fn windows_home_appdata_when_profile_unset() {
+        let home = PathBuf::from("/home/me");
+        let env = env_map(&[("HOME", "/home/me")]);
+        assert_eq!(
+            support_file_for("windows", &env),
+            Some(
+                home.join("AppData")
+                    .join("Roaming")
+                    .join("Chronicle")
+                    .join("pc_root")
+            )
+        );
+        assert_eq!(
+            vault_candidate_for("windows", &env),
+            Some(home.join("Chronicle"))
+        );
+    }
+
+    #[test]
+    fn windows_nothing_set_skips_support_and_root_vault() {
+        let env = env_map(&[]);
+        assert_eq!(support_file_for("windows", &env), None);
+        assert_eq!(vault_candidate_for("windows", &env), None);
+        let err = resolve_vault_dir_from("windows", &env, Path::new("/no/such/chronicle-pc"))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            "Set CHRONICLE_DIR to your Syncthing Chronicle folder (e.g. ~/Chronicle)."
+        );
+    }
+
+    #[test]
+    fn linux_home_config_support_and_home_vault_without_library() {
+        let home = PathBuf::from("/home/me");
+        let env = env_map(&[("HOME", "/home/me")]);
+        let support = support_file_for("linux", &env).unwrap();
+        assert_eq!(
+            support,
+            home.join(".config").join("Chronicle").join("pc_root")
+        );
+        assert_no_library(&support);
+        let vault = vault_candidate_for("linux", &env).unwrap();
+        assert_eq!(vault, home.join("Chronicle"));
+        assert_no_library(&vault);
+    }
+
+    #[test]
+    fn linux_xdg_config_home_support_keeps_home_vault() {
+        let env = env_map(&[
+            ("XDG_CONFIG_HOME", "/xdg"),
+            ("HOME", "/home/me"),
+        ]);
+        assert_eq!(
+            support_file_for("linux", &env),
+            Some(PathBuf::from("/xdg").join("Chronicle").join("pc_root"))
+        );
+        assert_eq!(
+            vault_candidate_for("linux", &env),
+            Some(PathBuf::from("/home/me").join("Chronicle"))
+        );
+    }
+
+    #[test]
+    fn empty_env_values_are_unset() {
+        let env = env_map(&[
+            ("APPDATA", ""),
+            ("LOCALAPPDATA", ""),
+            ("USERPROFILE", ""),
+            ("HOME", ""),
+            ("XDG_CONFIG_HOME", ""),
+            ("CHRONICLE_DIR", ""),
+        ]);
+        assert_eq!(support_file_for("windows", &env), None);
+        assert_eq!(vault_candidate_for("windows", &env), None);
+        assert_eq!(support_file_for("linux", &env), None);
+        assert_eq!(vault_candidate_for("linux", &env), None);
+        assert_eq!(
+            support_file_for("macos", &env),
+            Some(PathBuf::from("/").join("Library/Application Support/Chronicle/pc_root"))
+        );
+        assert_eq!(
+            vault_candidate_for("macos", &env),
+            Some(PathBuf::from("/").join("Chronicle"))
+        );
+        let err = resolve_vault_dir_from("linux", &env, Path::new("/no/such/chronicle-pc"))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            "Set CHRONICLE_DIR to your Syncthing Chronicle folder (e.g. ~/Chronicle)."
+        );
+    }
+
+    #[test]
+    fn relative_bases_are_not_joined_onto_root() {
+        let relative = "Chronicle/../../etc";
+        let env = env_map(&[
+            ("APPDATA", relative),
+            ("LOCALAPPDATA", "Chronicle"),
+            ("USERPROFILE", "Chronicle"),
+            ("HOME", relative),
+            ("XDG_CONFIG_HOME", "Chronicle"),
+        ]);
+        assert_eq!(support_file_for("windows", &env), None);
+        assert_eq!(vault_candidate_for("windows", &env), None);
+        assert_eq!(support_file_for("linux", &env), None);
+        assert_eq!(vault_candidate_for("linux", &env), None);
+        let mac_support = support_file_for("macos", &env).unwrap();
+        assert_eq!(
+            mac_support,
+            PathBuf::from("/").join("Library/Application Support/Chronicle/pc_root")
+        );
+        assert_eq!(
+            vault_candidate_for("macos", &env),
+            Some(PathBuf::from("/").join("Chronicle"))
+        );
+
+        let mixed = env_map(&[
+            ("APPDATA", "Chronicle"),
+            ("USERPROFILE", "Chronicle"),
+            ("XDG_CONFIG_HOME", "Chronicle"),
+            ("HOME", "/home/me"),
+        ]);
+        let home = PathBuf::from("/home/me");
+        assert_eq!(
+            support_file_for("windows", &mixed),
+            Some(
+                home.join("AppData")
+                    .join("Roaming")
+                    .join("Chronicle")
+                    .join("pc_root")
+            )
+        );
+        assert_eq!(
+            vault_candidate_for("windows", &mixed),
+            Some(home.join("Chronicle"))
+        );
+        assert_eq!(
+            support_file_for("linux", &mixed),
+            Some(home.join(".config").join("Chronicle").join("pc_root"))
+        );
+    }
+
+    #[test]
+    fn chronicle_dir_wins_when_directory_and_errors_when_missing() {
+        let root = std::env::temp_dir().join(format!(
+            "chronicle-embedded-paths-{}",
+            std::process::id()
+        ));
+        let chronicle_dir = root.join("explicit");
+        let home = root.join("home");
+        let home_vault = home.join("Chronicle");
+        std::fs::create_dir_all(&chronicle_dir).unwrap();
+        std::fs::create_dir_all(&home_vault).unwrap();
+        let win = resolve_vault_dir_from(
+            "windows",
+            &env_map(&[
+                ("CHRONICLE_DIR", chronicle_dir.to_str().unwrap()),
+                ("USERPROFILE", home.to_str().unwrap()),
+            ]),
+            Path::new("/no/such/chronicle-pc"),
+        )
+        .unwrap();
+        assert_eq!(win, chronicle_dir);
+
+        let missing = resolve_vault_dir_from(
+            "macos",
+            &env_map(&[
+                ("CHRONICLE_DIR", "/no/such/chronicle-dir-not-a-directory"),
+                ("HOME", home.to_str().unwrap()),
+            ]),
+            Path::new("/no/such/chronicle-pc"),
+        )
+        .unwrap_err();
+        assert!(missing.starts_with("CHRONICLE_DIR is not a directory:"));
+
+        let pc = root.join("chronicle-pc");
+        let demo = root.join("demo-vault");
+        std::fs::create_dir_all(&pc).unwrap();
+        std::fs::create_dir_all(&demo).unwrap();
+        let fell_through = resolve_vault_dir_from("linux", &env_map(&[]), &pc).unwrap();
+        assert_eq!(fell_through, demo);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn production_support_wrapper_matches_host_env() {
+        let env = process_env();
+        assert_eq!(
+            pc_root_support_file(),
+            support_file_for(std::env::consts::OS, &env)
+        );
+        if std::env::consts::OS == "macos" {
+            let home = absolute_base(&env, "HOME").expect("HOME");
+            assert_eq!(
+                pc_root_support_file(),
+                Some(home.join("Library/Application Support/Chronicle/pc_root"))
+            );
+        }
+    }
 }
