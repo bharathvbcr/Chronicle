@@ -2,7 +2,7 @@ package com.chronicle.app.e2ee
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.chronicle.app.SecurePrefs
+import java.security.spec.InvalidKeySpecException
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -42,6 +42,7 @@ class E2eeManagerAdoptTest {
     fun tearDown() {
         E2eeManager.lock()
         E2eeManager.resetPrefsProvider()
+        E2eeCrypto.resetPbkdf2ForTest()
     }
 
     private fun pcBlock(passphrase: String): JSONObject {
@@ -117,5 +118,97 @@ class E2eeManagerAdoptTest {
         )
         assertFalse(E2eeManager.unlock(context, "old passphrase"))
         assertTrue(E2eeManager.unlock(context, "new passphrase"))
+    }
+
+    private fun installedBlock(passphrase: String, saltByte: Byte): JSONObject {
+        val salt = ByteArray(16) { saltByte }
+        val iter = 100_000
+        val key = E2eeCrypto.deriveKey(passphrase, salt, iter)
+        val check = E2eeCrypto.makeCheckBlob(key)
+        prefs.edit()
+            .putBoolean("e2ee_enabled", true)
+            .putString(E2eeManager.PREF_KDF_SALT, E2eeCrypto.b64(salt))
+            .putInt(E2eeManager.PREF_KDF_ITER, iter)
+            .putString(E2eeManager.PREF_CHECK_JSON, check.toString())
+            .commit()
+        return JSONObject()
+            .put("enabled", true)
+            .put(
+                "kdf",
+                JSONObject()
+                    .put("alg", "pbkdf2-sha256")
+                    .put("iter", iter)
+                    .put("salt", E2eeCrypto.b64(salt)),
+            )
+            .put("check", check)
+    }
+
+    @Test
+    fun unlock_failedCandidate_keepsPreviousSalt() = runBlocking<Unit> {
+        // Phone already has a salt. PC config offers a different one. Today's
+        // e2eeUnlock adopts (writes SecurePrefs) and only then unlocks, so a
+        // passphrase that opens neither blob still destroys the previous salt.
+        val previous = installedBlock("old passphrase", 1)
+        val candidate = installedBlock("other passphrase", 2)
+        // installedBlock writes prefs; put the phone back on the previous salt
+        // so the candidate is only the remote blob, not the stored one.
+        prefs.edit()
+            .putString(E2eeManager.PREF_KDF_SALT, previous.getJSONObject("kdf").getString("salt"))
+            .putInt(E2eeManager.PREF_KDF_ITER, previous.getJSONObject("kdf").getInt("iter"))
+            .putString(E2eeManager.PREF_CHECK_JSON, previous.getJSONObject("check").toString())
+            .commit()
+        val previousSalt = prefs.getString(E2eeManager.PREF_KDF_SALT, null)
+        val previousCheck = prefs.getString(E2eeManager.PREF_CHECK_JSON, null)
+
+        val opened = E2eeManager.unlockAdoptingRemote(
+            context,
+            "neither passphrase",
+            candidate.getJSONObject("kdf"),
+            candidate.getJSONObject("check"),
+        )
+
+        assertFalse(opened)
+        assertEquals(previousSalt, prefs.getString(E2eeManager.PREF_KDF_SALT, null))
+        assertEquals(previousCheck, prefs.getString(E2eeManager.PREF_CHECK_JSON, null))
+    }
+
+    @Test
+    fun iterationsAboveCeiling_rejectedBeforePbkdf2() {
+        var calls = 0
+        E2eeCrypto.pbkdf2 = {
+            calls += 1
+            throw InvalidKeySpecException("pbkdf2 must not run")
+        }
+        try {
+            var sawHook = false
+            try {
+                E2eeCrypto.deriveKey("pw", ByteArray(16), 100_000)
+            } catch (_: InvalidKeySpecException) {
+                sawHook = true
+            }
+            assertTrue("hook did not intercept PBKDF2", sawHook)
+            assertEquals(1, calls)
+            calls = 0
+
+            var rejected = false
+            try {
+                E2eeCrypto.deriveKey("pw", ByteArray(16), 1_000_001)
+            } catch (_: IllegalArgumentException) {
+                rejected = true
+            }
+            assertTrue(rejected)
+            assertEquals(0, calls)
+
+            var longRejected = false
+            try {
+                E2eeCrypto.deriveKey("a".repeat(1025), ByteArray(16), 100_000)
+            } catch (_: IllegalArgumentException) {
+                longRejected = true
+            }
+            assertTrue(longRejected)
+            assertEquals(0, calls)
+        } finally {
+            E2eeCrypto.resetPbkdf2ForTest()
+        }
     }
 }

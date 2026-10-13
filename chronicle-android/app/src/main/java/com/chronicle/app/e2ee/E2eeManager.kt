@@ -108,6 +108,7 @@ object E2eeManager {
 
     private fun enableBlocking(context: Context, passphrase: String, existing: JSONObject?): JSONObject? {
         if (passphrase.isBlank()) return null
+        if (passphrase.length > E2eeCrypto.MAX_PASSPHRASE_CHARS) return null
         val prefs = getPrefs(context)
         if (prefs.contains(PREF_KDF_SALT)) {
             // Already configured — require normal unlock instead.
@@ -164,22 +165,81 @@ object E2eeManager {
             .put("check", check)
     }
 
+    /**
+     * PC re-setup during unlock.
+     *
+     * [enableBlocking] may adopt into an empty store and then clear those
+     * keys, because nothing was configured yet. Unlock already has a salt:
+     * do not write SecurePrefs unless [passphrase] opens the candidate.
+     * A miss leaves the previous salt and check blob and tries those instead.
+     */
+    internal suspend fun unlockAdoptingRemote(
+        context: Context,
+        passphrase: String,
+        kdf: JSONObject,
+        check: JSONObject,
+    ): Boolean = withContext(Dispatchers.Default) {
+        val opened = openCandidate(passphrase, kdf, check)
+        if (opened != null) {
+            persistAdoptedParams(context, opened.iterations, opened.saltB64, check)
+            cachedKey = opened.key
+            _unlocked.value = true
+            _enabled.value = true
+            return@withContext true
+        }
+        unlockBlocking(context, passphrase)
+    }
+
     /** Adopt PC-side params verbatim (fetched from /auth/e2ee/status). */
     fun adoptRemoteParams(context: Context, kdf: JSONObject, check: JSONObject): Boolean {
         val alg = kdf.optString("alg")
         if (alg != "pbkdf2-sha256") return false
-        val iter = kdf.optInt("iter", -1)
+        val iter = iterationsFromKdf(kdf) ?: return false
         val saltB64 = kdf.optString("salt")
-        if (iter < E2eeCrypto.MIN_ITERATIONS || saltB64.isEmpty()) return false
+        if (saltB64.isEmpty()) return false
         if (check.optString("nonce").isEmpty() || check.optString("ct").isEmpty()) return false
+        persistAdoptedParams(context, iter, saltB64, check)
+        return true
+    }
+
+    private fun persistAdoptedParams(
+        context: Context,
+        iterations: Int,
+        saltB64: String,
+        check: JSONObject,
+    ) {
         getPrefs(context).edit()
             .putBoolean("e2ee_enabled", true)
             .putString(PREF_KDF_SALT, saltB64)
-            .putInt(PREF_KDF_ITER, iter)
+            .putInt(PREF_KDF_ITER, iterations)
             .putString(PREF_CHECK_JSON, check.toString())
             .apply()
         _enabled.value = true
-        return true
+    }
+
+    /**
+     * Derive against the candidate without touching prefs.
+     * Over-cap counts and over-long passphrases return null before PBKDF2.
+     */
+    private fun openCandidate(passphrase: String, kdf: JSONObject, check: JSONObject): OpenedCandidate? {
+        if (kdf.optString("alg") != "pbkdf2-sha256") return null
+        val iter = iterationsFromKdf(kdf) ?: return null
+        val saltB64 = kdf.optString("salt")
+        if (saltB64.isEmpty()) return null
+        if (check.optString("nonce").isEmpty() || check.optString("ct").isEmpty()) return null
+        if (passphrase.isEmpty() || passphrase.length > E2eeCrypto.MAX_PASSPHRASE_CHARS) return null
+        val salt = try {
+            java.util.Base64.getDecoder().decode(saltB64)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val key = try {
+            deriveKeyOffMain(passphrase, salt, iter)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        if (!E2eeCrypto.verifyCheckBlob(key, check)) return null
+        return OpenedCandidate(key, iter, saltB64)
     }
 
     fun disable(context: Context) {
@@ -259,4 +319,29 @@ object E2eeManager {
 
     private fun getPrefs(context: Context): SharedPreferences =
         prefsProvider?.invoke(context) ?: SecurePrefs.get(context)
+}
+
+private class OpenedCandidate(val key: ByteArray, val iterations: Int, val saltB64: String)
+
+/**
+ * Iteration count only when it is a whole number inside the KDF ceiling.
+ * [JSONObject.optInt] truncates longs and doubles; a hostile config must not
+ * become a count that then runs.
+ */
+private fun iterationsFromKdf(kdf: JSONObject): Int? {
+    if (!kdf.has("iter") || kdf.isNull("iter")) return null
+    val iter = when (val raw = kdf.get("iter")) {
+        is Int -> raw
+        is Long -> if (raw < Int.MIN_VALUE || raw > Int.MAX_VALUE) return null else raw.toInt()
+        is Double -> {
+            if (!raw.isFinite()) return null
+            val asLong = raw.toLong()
+            if (asLong.toDouble() != raw) return null
+            if (asLong < Int.MIN_VALUE || asLong > Int.MAX_VALUE) return null
+            asLong.toInt()
+        }
+        else -> return null
+    }
+    if (iter < E2eeCrypto.MIN_ITERATIONS || iter > E2eeCrypto.MAX_ITERATIONS) return null
+    return iter
 }

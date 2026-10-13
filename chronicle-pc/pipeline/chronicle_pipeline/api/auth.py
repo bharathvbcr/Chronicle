@@ -62,9 +62,28 @@ def get_status(root=Depends(get_root)) -> dict[str, Any]:
     return _status_payload(root)
 
 
+def _configured_iterations(block: dict[str, Any] | None) -> object:
+    """Iteration count from a config block, or a non-int when it is absent.
+
+    Callers pass the result to ``validate_kdf_request`` before any KDF.
+    """
+    if not isinstance(block, dict):
+        return None
+    kdf = block.get("kdf")
+    if not isinstance(kdf, dict) or "iter" not in kdf:
+        return None
+    return kdf["iter"]
+
+
 @router.post("/unlock")
 def post_unlock(body: UnlockBody, root=Depends(get_root)) -> dict[str, Any]:
     try:
+        # No vault lock on this path. Reject before unlock so a hostile
+        # config.json count never reaches PBKDF2.
+        block = e2ee.load_e2ee_config(root)
+        if block is None:
+            raise e2ee.E2eeError("e2ee is not configured for this vault")
+        e2ee.validate_kdf_request(body.passphrase, _configured_iterations(block))
         e2ee.unlock(root, body.passphrase)
     except e2ee.E2eeError as e:
         raise HTTPException(403, str(e)) from e
@@ -92,8 +111,24 @@ def post_rotate(body: RotateBody, root: Path = Depends(get_root)) -> dict[str, A
     """
     from ..lock import vault_process_lock
 
+    try:
+        # Length is known without config. Refuse before the lock so a long
+        # passphrase cannot sit on the vault lock at all.
+        e2ee.validate_kdf_request(body.old_passphrase, e2ee.DEFAULT_KDF_ITERATIONS)
+        e2ee.validate_kdf_request(body.new_passphrase, e2ee.DEFAULT_KDF_ITERATIONS)
+    except e2ee.E2eeError as e:
+        raise HTTPException(403, str(e)) from e
+
     with vault_process_lock(root):
         try:
+            # The count lives in config.json. Read it under the same lock that
+            # wraps rotate, and refuse before derive_key. Releasing the lock
+            # between the check and the rotate would let two rotates interleave.
+            block = e2ee.load_e2ee_config(root)
+            if block is None or not block.get("enabled"):
+                raise e2ee.E2eeError("e2ee is not enabled for this vault")
+            e2ee.validate_kdf_request(body.old_passphrase, _configured_iterations(block))
+            e2ee.validate_kdf_request(body.new_passphrase, e2ee.DEFAULT_KDF_ITERATIONS)
             stats = e2ee.rotate_passphrase(root, body.old_passphrase, body.new_passphrase)
         except e2ee.E2eeError as e:
             raise HTTPException(403, str(e)) from e

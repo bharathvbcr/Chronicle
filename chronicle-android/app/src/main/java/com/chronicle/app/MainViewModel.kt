@@ -828,28 +828,35 @@ class MainViewModel : ViewModel() {
      */
     suspend fun e2eeUnlock(context: Context, passphrase: String): Boolean {
         val appContext = context.applicationContext
-        if (!com.chronicle.app.e2ee.E2eeManager.unlocked.value) {
+        val remote = if (!com.chronicle.app.e2ee.E2eeManager.unlocked.value) {
             withContext(Dispatchers.IO) {
                 try {
                     val uriStr = _folderUri.value
-                    if (!uriStr.isNullOrBlank()) {
+                    if (uriStr.isNullOrBlank()) {
+                        null
+                    } else {
                         VaultRepository(appContext, Uri.parse(uriStr))
                             .readConfigJsonObject("e2ee")
                             ?.takeIf { it.optBoolean("enabled") }
-                            ?.let { remote ->
-                                com.chronicle.app.e2ee.E2eeManager.adoptRemoteParams(
-                                    appContext,
-                                    remote.optJSONObject("kdf") ?: org.json.JSONObject(),
-                                    remote.optJSONObject("check") ?: org.json.JSONObject(),
-                                )
-                            }
                     }
                 } catch (_: Exception) {
                     // Offline / no SAF access → fall back to cached params.
+                    null
                 }
             }
+        } else {
+            null
         }
-        val ok = com.chronicle.app.e2ee.E2eeManager.unlock(appContext, passphrase)
+        val ok = if (remote != null) {
+            com.chronicle.app.e2ee.E2eeManager.unlockAdoptingRemote(
+                appContext,
+                passphrase,
+                remote.optJSONObject("kdf") ?: org.json.JSONObject(),
+                remote.optJSONObject("check") ?: org.json.JSONObject(),
+            )
+        } else {
+            com.chronicle.app.e2ee.E2eeManager.unlock(appContext, passphrase)
+        }
         // Drain anything captured while locked, now that a key exists.
         if (ok) flushPendingCapturesAsync(appContext)
         return ok
