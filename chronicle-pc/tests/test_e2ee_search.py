@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from chronicle_pipeline import e2ee, index_store
+from chronicle_pipeline import e2ee, index_store, rag
 from chronicle_pipeline.entries import save_entry
 from chronicle_pipeline.index_store import (
     get_documents_by_ids,
@@ -110,6 +110,9 @@ def test_missing_config_returns_indexed_text(tmp_path: Path) -> None:
 
     hits = search(tmp_path, MARKER, top_k=5)
     docs = get_documents_by_ids(tmp_path, [DOC_ID])
+    created = tmp_path / "config.json"
+    assert created.is_file()
+    assert not created.is_symlink()
     assert MARKER in _joined(hits)
     assert MARKER in _joined(docs)
 
@@ -371,3 +374,31 @@ def test_plain_vault_unreadable_entry_does_not_purge_plaintext(tmp_path: Path) -
     assert UNRELATED in stored
     assert OTHER in stored
     assert plain_path.is_file()
+
+
+def test_recall_dangling_config_symlink_hides_indexed_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dangling config.json symlink stays a symlink and hides indexed text.
+
+    recall calls ensure_config before search. That must raise instead of
+    replacing the symlink with a plain config. The error text has no marker.
+    """
+    monkeypatch.setattr(
+        "chronicle_pipeline.ollama.ollama_reachable", lambda *_args, **_kwargs: False
+    )
+    _seed_document(tmp_path, DOC_ID, MARKER, sealed=1)
+    missing = tmp_path / "config.json.missing"
+    cfg = tmp_path / "config.json"
+    cfg.symlink_to(missing)
+
+    from chronicle_pipeline.config import UnreadableConfigError
+
+    try:
+        with pytest.raises(UnreadableConfigError) as caught:
+            rag.recall(tmp_path, MARKER)
+        assert MARKER not in str(caught.value)
+    finally:
+        assert cfg.is_symlink()
+        assert not cfg.exists()
+        assert not missing.exists()
