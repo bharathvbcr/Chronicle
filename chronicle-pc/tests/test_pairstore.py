@@ -263,6 +263,82 @@ def test_corrupt_store_hot_reloads_once_repaired(tmp_path: Path) -> None:
     assert store.verify("t") == "phone"
 
 
+def test_all_nondict_device_values_are_not_replaced(tmp_path: Path) -> None:
+    """Dropping every non-dict device must not look like an empty store and mint."""
+    path = tmp_path / "pairing.json"
+    raw = b'{"devices": {"phone": "not-a-dict", "tablet": null}}'
+    path.write_bytes(raw)
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert path.read_bytes() == raw
+    assert len(store) == 0
+    assert store.list_devices() == []
+    assert store.token_for("phone") is None
+    with pytest.raises(PairingCorrupt):
+        store.add_device("laptop")
+    with pytest.raises(PairingCorrupt):
+        store.remove_device("phone")
+    assert path.read_bytes() == raw
+
+
+def test_mixed_device_values_are_not_replaced(tmp_path: Path) -> None:
+    """One non-dict value makes the whole file corrupt. Do not keep the dicts."""
+    path = tmp_path / "pairing.json"
+    raw = b'{"devices": {"phone": {"token": "tok-phone", "created": "c"}, "tablet": null}}'
+    path.write_bytes(raw)
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    assert path.read_bytes() == raw
+    assert store.verify("tok-phone") is None
+    with pytest.raises(PairingCorrupt):
+        store.add_device("laptop")
+    assert path.read_bytes() == raw
+
+
+def test_object_without_devices_key_still_mints(tmp_path: Path) -> None:
+    path = tmp_path / "pairing.json"
+    path.write_text('{"version": 1}\n', encoding="utf-8")
+    store = PairStore(path)
+    store.ensure_default_device("phone")
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert list(body["devices"]) == ["phone"]
+    assert body["devices"]["phone"]["token"]
+
+
+def test_replace_between_read_and_stat_is_not_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A swap after the bytes are read must not be signed as those devices."""
+    path = tmp_path / "pairing.json"
+    valid = json.dumps(
+        {"devices": {"phone": {"token": "tok-phone", "created": "c1"}}}
+    ).encode()
+    garbage = b'{"devices": "swapped-garbage-payload"}'
+    path.write_bytes(valid)
+    real_read_text = Path.read_text
+    swapped = False
+
+    def read_text(self: Path, *args: object, **kwargs: object) -> str:
+        nonlocal swapped
+        text = real_read_text(self, *args, **kwargs)
+        if self == path and not swapped:
+            path.write_bytes(garbage)
+            swapped = True
+        return text
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    store = PairStore(path)
+    assert swapped
+    assert path.read_bytes() == garbage
+    with pytest.raises(PairingCorrupt):
+        store.add_device("laptop")
+    assert path.read_bytes() == garbage
+    store.ensure_default_device("phone")
+    assert path.read_bytes() == garbage
+    assert len(store) == 0
+    assert store.token_for("phone") is None
+
+
 def test_symlink_to_valid_file_loads(tmp_path: Path) -> None:
     target = tmp_path / "real-pairing.json"
     target.write_text(

@@ -32,6 +32,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _LOG = logging.getLogger("chronicle.pair")
+# Not a real st_mtime_ns/st_size pair (size cannot be negative). A load that
+# observed the file change mid-read stores this so the next call must re-read
+# instead of trusting devices that were never paired with the bytes on disk.
+_FORCE_RELOAD_SIG = (-1, -1)
 
 
 class PairingCorrupt(Exception):
@@ -93,31 +97,55 @@ class PairStore:
         try:
             self.path.lstat()
         except FileNotFoundError:
-            self._devices = {}
-            self._corrupt = None
-            self._file_sig = None
+            self._set_missing()
             return
         except OSError as e:
-            self._mark_corrupt(f"pairing store unreadable ({type(e).__name__})")
+            self._mark_corrupt(
+                f"pairing store unreadable ({type(e).__name__})", self._stat_sig()
+            )
             return
+        sig_before = self._stat_sig()
         try:
-            self._devices = self._read_devices()
+            devices = self._read_devices()
         except FileNotFoundError:
-            # Vanished between the existence check and the read.
-            self._devices = {}
-            self._corrupt = None
-            self._file_sig = None
+            if self._stat_sig() is not None:
+                self._note_torn_read()
+                return
+            self._set_missing()
             return
         except PairingCorrupt as e:
-            self._mark_corrupt(str(e))
+            sig_after = self._stat_sig()
+            if sig_before != sig_after:
+                self._note_torn_read()
+                return
+            self._mark_corrupt(str(e), sig_after)
             return
+        sig_after = self._stat_sig()
+        if sig_before != sig_after:
+            # Bytes moved between the read and this stat. Do not keep the
+            # devices we just parsed, and do not pin _file_sig to the new
+            # bytes — the next public call has to read them itself.
+            self._note_torn_read()
+            return
+        self._devices = devices
         self._corrupt = None
-        self._file_sig = self._stat_sig()
+        self._file_sig = sig_after
 
-    def _mark_corrupt(self, reason: str) -> None:
+    def _set_missing(self) -> None:
+        self._devices = {}
+        self._corrupt = None
+        self._file_sig = None
+
+    def _note_torn_read(self) -> None:
+        self._devices = {}
+        self._corrupt = None
+        self._file_sig = _FORCE_RELOAD_SIG
+        _LOG.warning("pairing store changed while reading; will reload")
+
+    def _mark_corrupt(self, reason: str, sig: tuple[int, int] | None) -> None:
         self._devices = {}
         self._corrupt = reason
-        self._file_sig = self._stat_sig()
+        self._file_sig = sig
         _LOG.warning("corrupt pairing store; leaving it unchanged (%s)", reason)
 
     def _read_devices(self) -> dict[str, dict]:
@@ -156,7 +184,12 @@ class PairStore:
         devices = raw.get("devices", {})
         if not isinstance(devices, dict):
             raise PairingCorrupt("pairing store devices is not an object")
-        return {str(k): v for k, v in devices.items() if isinstance(v, dict)}
+        parsed: dict[str, dict] = {}
+        for key, value in devices.items():
+            if not isinstance(value, dict):
+                raise PairingCorrupt("pairing store device entry is not an object")
+            parsed[str(key)] = value
+        return parsed
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,6 +224,10 @@ class PairStore:
             fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
             try:
                 self._reload_if_changed()
+                if self._file_sig == _FORCE_RELOAD_SIG:
+                    raise PairingCorrupt(
+                        "refusing to modify a pairing store that changed while reading"
+                    )
                 if self._corrupt:
                     raise PairingCorrupt(
                         "refusing to modify a corrupt pairing store "
