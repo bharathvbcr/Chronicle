@@ -160,13 +160,147 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await api.entries.create({ type: 'log', text: 'hi' })
+    await api.health()
 
+    const connectCalls = fetchMock.mock.calls.filter(([url]) => url === '/connect')
+    expect(connectCalls).toHaveLength(1)
     const entryCall = fetchMock.mock.calls.find(([u]) => u === '/entries') as
       | [string, RequestInit?]
       | undefined
     expect(entryCall).toBeTruthy()
     const headers = (entryCall![1]?.headers ?? {}) as Record<string, string>
     expect(headers[AUTH_HEADER]).toBeUndefined()
+  })
+
+  it('retries GET /connect after HTTP 500 or a network error instead of caching null', async () => {
+    let connectAttempts = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/connect') {
+        connectAttempts += 1
+        if (connectAttempts === 1) {
+          return {
+            ok: false,
+            status: 500,
+            statusText: 'Server Error',
+            json: async () => ({ detail: 'down' }),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ token: 'lan-secret', auth_required: true }),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.health()).rejects.toMatchObject({ name: 'ApiError', status: 500 })
+    expect(connectAttempts).toBe(1)
+
+    const res = await api.health()
+    expect(res.ok).toBe(true)
+    expect(connectAttempts).toBe(2)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/health',
+      expect.objectContaining({
+        headers: expect.objectContaining({ [AUTH_HEADER]: 'lan-secret' }),
+      }),
+    )
+
+    resetLanAuthTokenCache()
+    connectAttempts = 0
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/connect') {
+        connectAttempts += 1
+        if (connectAttempts === 1) throw new Error('network down')
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ token: 'retry-secret', auth_required: true }),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      }
+    })
+
+    await expect(api.health()).rejects.toThrow('network down')
+    await api.health()
+    expect(connectAttempts).toBe(2)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/health',
+      expect.objectContaining({
+        headers: expect.objectContaining({ [AUTH_HEADER]: 'retry-secret' }),
+      }),
+    )
+  })
+
+  it('does not fail a shared /connect when only one waiter aborts', async () => {
+    const ac = new AbortController()
+    let connectCalls = 0
+    let releaseConnect: (() => void) | undefined
+    let markConnectStarted: () => void = () => {}
+    const connectStarted = new Promise<void>((resolve) => {
+      markConnectStarted = resolve
+    })
+
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/connect') {
+        connectCalls += 1
+        markConnectStarted()
+        return new Promise<unknown>((resolve, reject) => {
+          const signal = init?.signal
+          const onAbort = () => {
+            reject(new DOMException('Aborted', 'AbortError'))
+          }
+          if (signal?.aborted) {
+            onAbort()
+            return
+          }
+          signal?.addEventListener('abort', onAbort)
+          releaseConnect = () => {
+            signal?.removeEventListener('abort', onAbort)
+            resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({ token: 'lan-secret', auth_required: true }),
+            })
+          }
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = api.health({ signal: ac.signal })
+    const second = api.health()
+    await connectStarted
+    expect(connectCalls).toBe(1)
+
+    ac.abort()
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' })
+    expect(releaseConnect).toBeTypeOf('function')
+    releaseConnect!()
+
+    await expect(second).resolves.toEqual({ ok: true })
+    expect(connectCalls).toBe(1)
+    const healthCall = fetchMock.mock.calls.find(([url]) => url === '/health') as
+      | [string, RequestInit?]
+      | undefined
+    expect(healthCall).toBeTruthy()
+    const headers = (healthCall![1]?.headers ?? {}) as Record<string, string>
+    expect(headers[AUTH_HEADER]).toBe('lan-secret')
   })
 
   it('fetches /connect once to seed token before GET API requests', async () => {
