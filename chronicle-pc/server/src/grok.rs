@@ -20,6 +20,25 @@ pub struct GrokProvider {
     pub cfg: ChronicleConfig,
 }
 
+/// Data-URL MIME from the path's final extension only.
+/// Any other extension is an error so the bytes are not labeled image/jpeg.
+fn image_mime(path: &Path) -> Result<&'static str, ChronicleError> {
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Ok("image/png"),
+        "jpg" | "jpeg" => Ok("image/jpeg"),
+        "gif" => Ok("image/gif"),
+        "webp" => Ok("image/webp"),
+        other => Err(ChronicleError::Llm(format!(
+            "unsupported image extension '{other}'"
+        ))),
+    }
+}
+
 /// Chat-completions body for one vision turn.
 /// `content` is one parts array (text, then image_url), not an array of that array.
 fn image_chat_payload(model: &str, prompt: &str, data_url: &str) -> Value {
@@ -141,17 +160,9 @@ impl ChatProvider for GrokProvider {
     }
 
     fn describe_image(&self, image_path: &Path, prompt: &str) -> Result<String, ChronicleError> {
+        let mime = image_mime(image_path)?;
         let raw = std::fs::read(image_path)?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
-        let mime = if image_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("png"))
-        {
-            "image/png"
-        } else {
-            "image/jpeg"
-        };
         let data_url = format!("data:{mime};base64,{b64}");
         let payload = image_chat_payload(&self.vision_model(), prompt, &data_url);
         self.post_chat(&payload, Duration::from_secs(300))
@@ -160,6 +171,8 @@ impl ChatProvider for GrokProvider {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -170,16 +183,58 @@ mod tests {
         let content = &payload["messages"][0]["content"];
         assert!(content.is_array(), "content is an array, got {content}");
         let parts = content.as_array().expect("content is an array");
+        assert_eq!(
+            parts.len(),
+            2,
+            "content is exactly one text part and one image_url part: {content}"
+        );
         assert!(
             parts.first().is_some_and(|part| part.is_object() && !part.is_array()),
             "content[0] is the text object, not an array: {content}"
         );
+        assert_eq!(
+            parts.iter().filter(|part| part["type"] == json!("text")).count(),
+            1,
+            "content has one text part: {content}"
+        );
+        assert_eq!(
+            parts.iter().filter(|part| part["type"] == json!("image_url")).count(),
+            1,
+            "content has one image_url part: {content}"
+        );
         assert_eq!(parts[0]["type"], json!("text"));
         assert_eq!(parts[0]["text"], json!("Describe this journal photo."));
         assert_eq!(parts[1]["type"], json!("image_url"));
+        assert_eq!(parts[1]["image_url"]["url"], json!(data_url));
         assert!(
             !serialized.contains("[["),
             "serialized JSON must not wrap the parts array: {serialized}"
         );
+    }
+
+    #[test]
+    fn image_mime_follows_final_extension() {
+        let cases = [
+            ("shot.png", "image/png"),
+            ("shot.PNG", "image/png"),
+            ("shot.jpeg", "image/jpeg"),
+            ("shot.gif", "image/gif"),
+            ("shot.webp", "image/webp"),
+            ("photo.JPG", "image/jpeg"),
+        ];
+        for (name, expect) in cases {
+            let got = image_mime(Path::new(name)).unwrap_or_else(|err| panic!("{name}: {err}"));
+            assert_eq!(got, expect, "png-only check labels {name} as {got}");
+        }
+        match image_mime(Path::new("a.PNG.bak")) {
+            Ok(mime) => panic!("a.PNG.bak must error, not {mime}"),
+            Err(err) => {
+                let text = err.to_string();
+                assert!(
+                    !text.contains("image/jpeg"),
+                    "a.PNG.bak error must not claim image/jpeg: {text}"
+                );
+            }
+        }
     }
 }
