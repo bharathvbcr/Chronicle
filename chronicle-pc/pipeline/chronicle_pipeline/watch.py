@@ -242,12 +242,11 @@ class DebouncedWatch:
                 return
             if self._capture_explicit and self._captured is not None:
                 after = self._snapshot()
+                # note() paths are echoes here too. A follow-up is only a
+                # create that landed after the frozen self-write snapshot.
                 late = _snapshot_diff(self._captured, after)
-                own_paths = set(_snapshot_diff(self._before, self._captured))
-                # Baseline stays the frozen self-write snapshot.
-                unexplained = set(late) | (self._external - own_paths)
                 self._accounted = dict(self._captured)
-                if unexplained:
+                if late:
                     self._owed = True
             else:
                 after = self._snapshot()
