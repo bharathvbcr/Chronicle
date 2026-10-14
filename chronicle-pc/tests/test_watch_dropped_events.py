@@ -137,6 +137,42 @@ def test_create_during_ignore_window_runs_once_after_it(tmp_path: Path) -> None:
     assert len(calls) == 2
 
 
+def test_handler_event_during_run_follows_up_once(tmp_path: Path) -> None:
+    """A user path reported the way the production handler reports events.
+
+    ``note({own})`` stays an echo. The user file must not go through ``note``,
+    or finish treats it as the run's own write.
+    """
+    clock = ManualClock()
+    calls: list[float] = []
+    own = tmp_path / "own.txt"
+    user = tmp_path / "user.txt"
+    holder: dict[str, DebouncedWatch] = {}
+
+    def run() -> None:
+        calls.append(clock.time())
+        own.write_text(f"own-{len(calls)}", encoding="utf-8")
+        holder["sched"].note({str(own)})
+        if len(calls) == 1:
+            assert holder["sched"].processing is True
+            user.write_text("user", encoding="utf-8")
+            holder["sched"].observe_event({str(user)})
+
+    sched = _watch(tmp_path, clock, run)
+    holder["sched"] = sched
+    _fire_initial(sched, clock, tmp_path)
+    assert len(calls) == 1
+
+    _past_window(sched, clock)
+    assert len(calls) == 2
+
+    clock.advance(30.0)
+    sched.turn()
+    clock.advance(30.0)
+    sched.turn()
+    assert len(calls) == 2
+
+
 def test_self_write_alone_does_not_schedule_follow_up(tmp_path: Path) -> None:
     clock = ManualClock()
     calls: list[float] = []
@@ -191,6 +227,64 @@ def test_para_user_file_during_index_schedules_one_later_index(tmp_path: Path) -
     sched.turn()
     sched.turn()
     assert len(calls) == 2
+
+
+def test_para_onchange_without_path_follows_user_file_only(tmp_path: Path) -> None:
+    """PARA ``on_change()`` has no path. The noted own file is not a second index."""
+    clock = ManualClock()
+    calls: list[float] = []
+    area = tmp_path / "30-Knowledge"
+    area.mkdir()
+    own = area / "index-own.md"
+    user = area / "user-note.md"
+    holder: dict[str, DebouncedWatch] = {}
+
+    def index() -> None:
+        calls.append(clock.time())
+        own.write_text(f"idx-{len(calls)}", encoding="utf-8")
+        holder["sched"].note({str(own)})
+        if len(calls) == 1:
+            assert holder["sched"].processing is True
+            user.write_text("note", encoding="utf-8")
+            holder["sched"].note()
+
+    sched = _watch(tmp_path, clock, index, error_message="index update failed during watch")
+    holder["sched"] = sched
+    _fire_initial(sched, clock, tmp_path)
+    assert len(calls) == 1
+
+    _past_window(sched, clock)
+    assert len(calls) == 2
+
+    clock.advance(30.0)
+    sched.turn()
+    clock.advance(30.0)
+    sched.turn()
+    assert len(calls) == 2
+
+
+def test_observe_event_rewrite_does_not_follow_up(tmp_path: Path) -> None:
+    clock = ManualClock()
+    calls: list[float] = []
+    existing = tmp_path / "existing.txt"
+    existing.write_text("seed", encoding="utf-8")
+    holder: dict[str, DebouncedWatch] = {}
+
+    def run() -> None:
+        calls.append(clock.time())
+        existing.write_text(f"rewritten-{len(calls)}", encoding="utf-8")
+        holder["sched"].observe_event({str(existing)})
+
+    sched = _watch(tmp_path, clock, run)
+    holder["sched"] = sched
+    _fire_initial(sched, clock, tmp_path)
+    assert len(calls) == 1
+
+    _past_window(sched, clock)
+    clock.advance(30.0)
+    sched.turn()
+    sched.turn()
+    assert len(calls) == 1
 
 
 def test_para_self_write_does_not_schedule_another_index(tmp_path: Path) -> None:

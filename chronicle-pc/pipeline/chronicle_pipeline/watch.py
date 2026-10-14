@@ -94,6 +94,7 @@ class DebouncedWatch:
         self._captured: dict[str, int] | None = None
         self._capture_explicit = False
         self._external: set[str] = set()
+        self._observed: set[str] = set()
 
     def close(self) -> None:
         """Cancel timers. Safe during shutdown; does not wait for an in-flight run."""
@@ -127,7 +128,11 @@ class DebouncedWatch:
             self._capture_explicit = True
 
     def note(self, paths: set[str] | None = None) -> None:
-        """Watchdog: something changed. Echoes of the run's own delta do not re-arm."""
+        """Echo declaration. Paths named here during a run are the run's own writes.
+
+        A call with no path (PARA ``on_change``) does not declare every new file
+        an echo, and does not by itself schedule a follow-up.
+        """
         with self._lock:
             if self._closed:
                 return
@@ -140,6 +145,25 @@ class DebouncedWatch:
                 return
             if now < self.ignore_until:
                 if self._snapshot() != self._accounted:
+                    self._owed = True
+                return
+            self._arm_locked()
+
+    def observe_event(self, paths: set[str]) -> None:
+        """Filesystem event from the production handler. Not an echo declaration."""
+        with self._lock:
+            if self._closed or not paths:
+                return
+            now = self._clock()
+            if self.processing:
+                self._observed |= paths
+                if self._capture_explicit and self._captured is not None:
+                    if _snapshot_diff(self._captured, self._snapshot()):
+                        self._owed = True
+                return
+            if now < self.ignore_until:
+                # A path already in the baseline is a rewrite. Owing on it loops.
+                if any(path not in self._accounted for path in paths):
                     self._owed = True
                 return
             self._arm_locked()
@@ -201,6 +225,7 @@ class DebouncedWatch:
         self._captured = None
         self._capture_explicit = False
         self._external.clear()
+        self._observed.clear()
         self._owed = False
         self._lock.release()
         try:
@@ -226,13 +251,19 @@ class DebouncedWatch:
                     self._owed = True
             else:
                 after = self._snapshot()
-                # Noted paths are echoes. Any other path that did not exist
-                # before the run is a user create and must stay out of the baseline.
+                # note() paths are echoes. A new path is a follow-up when the
+                # poller saw it with no event, or the handler observed it and
+                # note() did not claim it. A path that already existed is a rewrite.
                 user_creates = {
                     path
                     for path in after
                     if path not in self._before and path not in self._external
                 }
+                for path in self._observed:
+                    if path in self._external or path in self._before:
+                        continue
+                    if path in after:
+                        user_creates.add(path)
                 accounted = dict(after)
                 for path in user_creates:
                     accounted.pop(path, None)
@@ -247,6 +278,7 @@ class DebouncedWatch:
             self._captured = None
             self._capture_explicit = False
             self._external.clear()
+            self._observed.clear()
             self.processing = False
             self._before = {}
 
@@ -414,7 +446,7 @@ def run_watch(
                 # Derived / local-only churn — never trigger a full process cycle.
                 if parts & {"index", "notes", "brain", "40-Journal", "_system"}:
                     return
-                core.note({str(path)})
+                core.observe_event({str(path)})
 
         observer = Observer()
         for watched in watch_dirs:
