@@ -136,6 +136,99 @@ def test_capture_note_of_unchanged_path_does_not_follow_up(tmp_path: Path) -> No
     assert len(calls) == 1
 
 
+def test_capture_transient_create_does_not_latch_follow_up(tmp_path: Path) -> None:
+    """A file created after the freeze and removed before return is not a follow-up."""
+    clock = ManualClock()
+    calls: list[float] = []
+    kept = tmp_path / "kept.txt"
+    kept.write_text("same", encoding="utf-8")
+    own = tmp_path / "own.txt"
+    fleeting = tmp_path / "fleeting.txt"
+    holder: dict[str, DebouncedWatch] = {}
+
+    def run() -> None:
+        calls.append(clock.time())
+        own.write_text(f"own-{len(calls)}", encoding="utf-8")
+        holder["sched"].capture_self_writes()
+        fleeting.write_text("x", encoding="utf-8")
+        holder["sched"].note({str(kept)})
+        fleeting.unlink()
+
+    sched = _watch(tmp_path, clock, run)
+    holder["sched"] = sched
+    _fire_initial(sched, clock, tmp_path)
+    assert len(calls) == 1
+
+    _past_window(sched, clock)
+    clock.advance(30.0)
+    sched.turn()
+    clock.advance(30.0)
+    sched.turn()
+    assert len(calls) == 1
+
+
+def test_capture_remaining_file_follows_up_once(tmp_path: Path) -> None:
+    clock = ManualClock()
+    calls: list[float] = []
+    kept = tmp_path / "kept.txt"
+    kept.write_text("same", encoding="utf-8")
+    own = tmp_path / "own.txt"
+    user = tmp_path / "user.txt"
+    holder: dict[str, DebouncedWatch] = {}
+
+    def run() -> None:
+        calls.append(clock.time())
+        own.write_text(f"own-{len(calls)}", encoding="utf-8")
+        if len(calls) == 1:
+            holder["sched"].capture_self_writes()
+            user.write_text("user", encoding="utf-8")
+            holder["sched"].note({str(kept)})
+
+    sched = _watch(tmp_path, clock, run)
+    holder["sched"] = sched
+    _fire_initial(sched, clock, tmp_path)
+    assert len(calls) == 1
+
+    _past_window(sched, clock)
+    assert len(calls) == 2
+
+    clock.advance(30.0)
+    sched.turn()
+    clock.advance(30.0)
+    sched.turn()
+    assert len(calls) == 2
+
+
+def test_capture_transient_observe_event_does_not_latch(tmp_path: Path) -> None:
+    clock = ManualClock()
+    calls: list[float] = []
+    kept = tmp_path / "kept.txt"
+    kept.write_text("same", encoding="utf-8")
+    own = tmp_path / "own.txt"
+    fleeting = tmp_path / "fleeting.txt"
+    holder: dict[str, DebouncedWatch] = {}
+
+    def run() -> None:
+        calls.append(clock.time())
+        own.write_text(f"own-{len(calls)}", encoding="utf-8")
+        holder["sched"].capture_self_writes()
+        fleeting.write_text("x", encoding="utf-8")
+        holder["sched"].observe_event({str(kept)})
+        fleeting.unlink()
+
+    sched = _watch(tmp_path, clock, run)
+    holder["sched"] = sched
+    _fire_initial(sched, clock, tmp_path)
+    assert len(calls) == 1
+
+    _past_window(sched, clock)
+    clock.advance(30.0)
+    sched.turn()
+    clock.advance(30.0)
+    sched.turn()
+    assert len(calls) == 1
+
+
 def test_create_during_ignore_window_runs_once_after_it(tmp_path: Path) -> None:
     clock = ManualClock()
     calls: list[float] = []

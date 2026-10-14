@@ -246,8 +246,9 @@ class DebouncedWatch:
                 # create that landed after the frozen self-write snapshot.
                 late = _snapshot_diff(self._captured, after)
                 self._accounted = dict(self._captured)
-                if late:
-                    self._owed = True
+                # The end snapshot decides. A mid-run latch must not survive
+                # when the extra file is gone before return.
+                self._owed = bool(late)
             else:
                 after = self._snapshot()
                 # note() paths are echoes. A new path is a follow-up when the
