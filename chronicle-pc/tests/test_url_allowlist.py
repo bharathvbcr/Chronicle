@@ -157,3 +157,109 @@ def test_grok_errors_omit_rejected_base_url() -> None:
     assert "secret" not in factory_message
     assert raw not in factory_message
     assert "https://api.x.ai" in factory_message
+
+
+def test_percent_4a_is_letter_j_not_userinfo() -> None:
+    # %4A / %4a encode 'J' (0x4A). They are not a case variant of %40.
+    ollama_url = "http://127.0.0.1:11434%4Aevil.example/"
+    assert is_private_or_loopback_url(ollama_url)
+    assert validate_ollama_base_url(ollama_url) == "http://127.0.0.1:11434%4Aevil.example"
+    assert is_allowed_grok_url("https://api.x.ai/%4A")
+    assert is_allowed_grok_url("https://api.x.ai/%4a")
+    assert validate_grok_base_url("https://api.x.ai/%4A") == "https://api.x.ai/%4A"
+
+
+def test_control_chars_rejected_before_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    import chronicle_pipeline.url_allowlist as allowlist
+
+    def fail_resolve(*_args, **_kwargs):
+        raise AssertionError("socket.getaddrinfo must not run for a control character URL")
+
+    monkeypatch.setattr(allowlist.socket, "getaddrinfo", fail_resolve)
+    nul = "http://127.0.0.1\x00.evil.example:11434"
+    assert not is_private_or_loopback_url(nul)
+    with pytest.raises(ValueError, match="private or loopback") as nul_exc:
+        validate_ollama_base_url(nul)
+    nul_message = str(nul_exc.value)
+    assert type(nul_exc.value) is ValueError
+    assert nul not in nul_message
+    assert "\x00" not in nul_message
+    assert "evil.example" not in nul_message
+
+    for url in (
+        "http://127.0.0.1\x7f.evil.example:11434",
+        "http://127.0.0.1\x01.evil.example:11434",
+        "http://127.0.0.1\t.evil.example:11434",
+    ):
+        assert not is_private_or_loopback_url(url)
+        with pytest.raises(ValueError, match="private or loopback") as exc:
+            validate_ollama_base_url(url)
+        assert type(exc.value) is ValueError
+        assert url not in str(exc.value)
+
+    for url in (
+        "https://api.x.ai\x00/v1",
+        "https://api.x.ai\t/v1",
+        "https://api.x.ai/v1\t",
+        "https://api.x.ai\x7f/v1",
+    ):
+        assert not is_allowed_grok_url(url)
+        with pytest.raises(ValueError, match="api.x.ai") as exc:
+            validate_grok_base_url(url)
+        message = str(exc.value)
+        assert type(exc.value) is ValueError
+        assert url not in message
+        assert "\x00" not in message
+        assert "\t" not in message
+        assert "\x7f" not in message
+
+    assert is_allowed_grok_url("https://api.x.ai/v1")
+    assert validate_grok_base_url("https://api.x.ai/v1") == "https://api.x.ai/v1"
+    assert is_allowed_grok_url("https://api.x.ai:443/v1")
+    assert validate_grok_base_url("https://api.x.ai:443/v1") == "https://api.x.ai:443/v1"
+
+
+def test_apply_settings_rejects_nul_without_logging_url(caplog: pytest.LogCaptureFixture) -> None:
+    import logging
+
+    from chronicle_pipeline import ollama
+
+    previous = ollama.OLLAMA_BASE
+    rejected = "http://127.0.0.1\x00.evil.example:11434"
+    try:
+        ollama.OLLAMA_BASE = "http://127.0.0.1:11434"
+        with caplog.at_level(logging.WARNING, logger="chronicle.ollama"):
+            ollama.apply_settings(rejected)
+        assert ollama.OLLAMA_BASE == "http://127.0.0.1:11434"
+        warning = caplog.text
+        assert rejected not in warning
+        assert "\x00" not in warning
+        assert "evil.example" not in warning
+    finally:
+        ollama.OLLAMA_BASE = previous
+
+
+def test_overlong_idna_label_is_rejected(caplog: pytest.LogCaptureFixture) -> None:
+    import logging
+
+    from chronicle_pipeline import ollama
+
+    label = "a" * 300
+    url = "http://" + label + ".example:11434/"
+    assert not is_private_or_loopback_url(url)
+    with pytest.raises(ValueError, match="private or loopback") as exc:
+        validate_ollama_base_url(url)
+    assert type(exc.value) is ValueError
+    assert not isinstance(exc.value, UnicodeError)
+    assert label not in str(exc.value)
+
+    previous = ollama.OLLAMA_BASE
+    try:
+        ollama.OLLAMA_BASE = "http://10.0.0.5:11434"
+        with caplog.at_level(logging.WARNING, logger="chronicle.ollama"):
+            ollama.apply_settings(url)
+        assert ollama.OLLAMA_BASE == "http://10.0.0.5:11434"
+        assert label not in caplog.text
+        assert url not in caplog.text
+    finally:
+        ollama.OLLAMA_BASE = previous

@@ -11,6 +11,15 @@ DEFAULT_GROK_BASE = "https://api.x.ai/v1"
 DEFAULT_OLLAMA_BASE = "http://localhost:11434"
 
 
+def _has_control_char(url: str) -> bool:
+    # C0 and DEL. getaddrinfo truncates at NUL and would approve a different host.
+    for ch in url or "":
+        code = ord(ch)
+        if code < 0x20 or code == 0x7F:
+            return True
+    return False
+
+
 def _normalize_url(url: str, *, default_scheme: str = "http") -> str:
     cleaned = (url or "").strip().rstrip("/")
     if not cleaned:
@@ -31,7 +40,7 @@ def _has_userinfo(url: str, parsed) -> bool:
 
 def _host_is_private_or_loopback(host: str) -> bool:
     name = (host or "").strip().lower()
-    if not name:
+    if not name or _has_control_char(name):
         return False
     if name == "localhost":
         return True
@@ -41,9 +50,12 @@ def _host_is_private_or_loopback(host: str) -> bool:
     except ValueError:
         pass
     # Resolve hostnames; every address must be private/loopback.
+    # UnicodeError is an IDNA failure (label too long), not an OSError.
     try:
         infos = socket.getaddrinfo(name, None)
     except OSError:
+        return False
+    except UnicodeError:
         return False
     if not infos:
         return False
@@ -69,8 +81,10 @@ def _grok_port_allowed(parsed) -> bool:
 
 def is_private_or_loopback_url(url: str) -> bool:
     """True when URL host is loopback, RFC1918, link-local, or localhost."""
+    if _has_control_char(url):
+        return False
     normalized = _normalize_url(url, default_scheme="http")
-    if not normalized:
+    if not normalized or _has_control_char(normalized):
         return False
     try:
         parsed = urlparse(normalized)
@@ -88,8 +102,10 @@ def is_private_or_loopback_url(url: str) -> bool:
 
 def is_allowed_grok_url(url: str) -> bool:
     """True only for https://api.x.ai (optional path, port 443)."""
+    if _has_control_char(url):
+        return False
     normalized = _normalize_url(url, default_scheme="https")
-    if not normalized:
+    if not normalized or _has_control_char(normalized):
         return False
     try:
         parsed = urlparse(normalized)
@@ -110,10 +126,19 @@ def _refuses_userinfo(url: str) -> bool:
 
 def validate_ollama_base_url(url: str) -> str:
     """Return cleaned URL or raise ValueError."""
+    if _has_control_char(url):
+        raise ValueError(
+            "ollama base_url must be a private or loopback address "
+            "(localhost / 127.0.0.1 / RFC1918); public hosts are blocked"
+        )
     cleaned = _normalize_url(url, default_scheme="http")
     if not cleaned:
         raise ValueError("ollama base_url must be a non-empty URL")
-    if _refuses_userinfo(cleaned) or not is_private_or_loopback_url(cleaned):
+    if (
+        _has_control_char(cleaned)
+        or _refuses_userinfo(cleaned)
+        or not is_private_or_loopback_url(cleaned)
+    ):
         raise ValueError(
             "ollama base_url must be a private or loopback address "
             "(localhost / 127.0.0.1 / RFC1918); public hosts are blocked"
@@ -123,10 +148,19 @@ def validate_ollama_base_url(url: str) -> str:
 
 def validate_grok_base_url(url: str) -> str:
     """Return cleaned URL or raise ValueError."""
+    if _has_control_char(url):
+        raise ValueError(
+            "grok_base_url must be https://api.x.ai (exact host); "
+            "other hosts are blocked"
+        )
     cleaned = _normalize_url(url, default_scheme="https")
     if not cleaned:
         raise ValueError("grok_base_url must be a non-empty URL")
-    if _refuses_userinfo(cleaned) or not is_allowed_grok_url(cleaned):
+    if (
+        _has_control_char(cleaned)
+        or _refuses_userinfo(cleaned)
+        or not is_allowed_grok_url(cleaned)
+    ):
         raise ValueError(
             "grok_base_url must be https://api.x.ai (exact host); "
             "other hosts are blocked"
