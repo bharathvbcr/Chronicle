@@ -14,7 +14,9 @@ heartbeats keep proxies from idling the socket out.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
+import stat
 import threading
 import time
 from collections.abc import AsyncIterator
@@ -38,15 +40,20 @@ _MAX_DIRS = 4000
 
 
 def vault_fingerprint(root: Path) -> str:
-    """Cheap mtime fingerprint over config + capture + brain + journal.
+    """Fingerprint over config + capture + brain + journal.
 
     Robustness rules (stress-tested):
-    - Only FILES count against the scan budget — the old version budgeted
-      directory visits too, so deep trees could exhaust the budget before
-      reaching any file and return a blind "empty".
-    - Every visited directory contributes its mtime, so structural changes
-      (a new capture file appearing anywhere) stay detectable even when the
-      vault exceeds the per-file budget.
+    - Only capture/brain FILES count against the scan budget. Directory
+      visits do not, so a deep tree cannot exhaust the budget before any
+      file is seen and return a blind "empty".
+    - Every visited directory contributes its mtime. Creates and renames
+      stay visible after the capture/brain file budget is spent. Files past
+      that budget are not hashed — an equal-length swap of two of them is
+      invisible on purpose.
+    - A statted file is the vault-relative posix path, mtime, size, and a
+      short content hash. ``40-Journal`` files are always statted: they are
+      the phone timeline, and suffix alone is not an identity.
+    - ``config.json`` keeps ``path:mtime_ns:size`` with no content hash.
     """
 
     parts: list[str] = []
@@ -58,9 +65,15 @@ def vault_fingerprint(root: Path) -> str:
         if not base.exists():
             continue
         if base.is_file():
-            st = base.stat()
+            try:
+                st = base.stat()
+            except OSError:
+                continue
             parts.append(f"{rel}:{st.st_mtime_ns}:{st.st_size}")
             continue
+        # Journal is the phone timeline: never drop it because capture/brain
+        # already used the file budget.
+        budget_exempt = rel == "40-Journal"
         stack = [(base, 0)]
         while stack and dirs_seen < _MAX_DIRS:
             current, depth = stack.pop()
@@ -71,7 +84,7 @@ def vault_fingerprint(root: Path) -> str:
                 continue
             dirs_seen += 1
             # Dir mtime moves on add/remove/rename of direct children —
-            # the dominant signal for "new capture landed".
+            # the signal for capture/brain once the file budget is spent.
             parts.append(f"d:{current.name}:{st.st_mtime_ns}")
             for child in iterator:
                 try:
@@ -79,16 +92,49 @@ def vault_fingerprint(root: Path) -> str:
                         if depth < _SCAN_DEPTH:
                             stack.append((child, depth + 1))
                         continue
-                    if files_seen >= max_files:
-                        continue  # keep listing (cheap); skip stat work
-                    files_seen += 1
-                    st = child.stat()
-                    parts.append(f"f{child.suffix}:{st.st_mtime_ns}")
+                    if not budget_exempt and files_seen >= max_files:
+                        continue  # keep listing (cheap); skip stat and hash
+                    if not budget_exempt:
+                        files_seen += 1
+                    token = _statted_file_token(root, child)
+                    if token is not None:
+                        parts.append(token)
                 except OSError:
                     continue
     if not parts:
         return "empty"
     return ";".join(sorted(parts))
+
+
+def _statted_file_token(root: Path, child: Path) -> str | None:
+    """Path, mtime, size, and sha256 prefix. ``..`` is never a token.
+
+    OSError on this file skips it. Non-regular files are skipped so a fifo
+    or device cannot block the scan.
+    """
+    try:
+        rel = child.relative_to(root)
+    except ValueError:
+        return None
+    if ".." in rel.parts:
+        return None
+    posix = rel.as_posix()
+    if not posix or posix.startswith("/") or posix.startswith("../") or "/../" in posix:
+        return None
+    try:
+        st = child.stat()
+        if not stat.S_ISREG(st.st_mode):
+            return None
+        digest = hashlib.sha256()
+        with child.open("rb") as fh:
+            while True:
+                chunk = fh.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError:
+        return None
+    return f"{posix}:{st.st_mtime_ns}:{st.st_size}:{digest.hexdigest()[:16]}"
 
 
 def _max_file_budget() -> int:
