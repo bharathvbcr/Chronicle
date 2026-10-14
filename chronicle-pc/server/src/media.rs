@@ -50,16 +50,11 @@ pub fn validate_media_rel(root: &Path, rel: &str, kind: &str) -> Result<PathBuf,
         let msg = if kind == "img" { format!("invalid image path: {rel}") } else { format!("invalid audio path: {rel}") };
         return Err(ChronicleError::MediaPath(msg));
     }
-    let abs = root.join(&cleaned);
-    let root_resolved = root
-        .canonicalize()
-        .unwrap_or_else(|_| root.to_path_buf());
-    let abs_resolved = abs
-        .canonicalize()
-        .unwrap_or_else(|_| abs.clone());
-    if !abs_resolved.starts_with(&root_resolved) && !abs.starts_with(&root_resolved) {
-        return Err(ChronicleError::MediaPath(format!("{kind} path escapes vault: {rel}")));
-    }
+    // Same ancestor rule as path_map::abs_under_root: a lexical path inside the
+    // vault is not enough when the path or a parent is a symlink to the outside.
+    crate::path_map::abs_under_root(root, &cleaned).map_err(|_| {
+        ChronicleError::MediaPath(format!("{kind} path escapes vault: {rel}"))
+    })?;
     Ok(root.join(cleaned))
 }
 
@@ -103,12 +98,12 @@ pub fn resolve_media_abs(root: &Path, rel: &str) -> Result<PathBuf, ChronicleErr
             }
         }
     }
-    let preferred = root.join(&candidates[0]);
-    let preferred_resolved = preferred.canonicalize().unwrap_or(preferred);
-    if !preferred_resolved.starts_with(&root_resolved) {
-        return Err(ChronicleError::msg(format!("media path escapes vault: {rel}")));
-    }
-    Ok(preferred_resolved)
+    // A missing leaf does not canonicalize. Walk the nearest existing ancestor
+    // so a parent directory symlink that points outside is rejected.
+    crate::path_map::abs_under_root(root, &candidates[0]).map_err(|_| {
+        ChronicleError::msg(format!("media path escapes vault: {rel}"))
+    })?;
+    Ok(root.join(&candidates[0]))
 }
 
 /// Upload magic-byte checks (api/entries.py).
@@ -129,4 +124,51 @@ pub fn validate_media_ref_list(root: &Path, refs: &[Value], kind: &str) -> Resul
         validate_media_rel(root, s, kind)?;
     }
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn containment_media_symlink_outside_rejected() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        // Temp roots live under /var → /private/var. Pass the canonical root so
+        // the lexical path starts with root_resolved; otherwise the old AND
+        // check rejects for the wrong reason and the test passes without a fix.
+        let root = vault.path().canonicalize().unwrap();
+        let secret = outside.path().canonicalize().unwrap().join("secret.jpg");
+        std::fs::write(&secret, b"outside-bytes").unwrap();
+        let dir = root.join("_attachments/2026/07");
+        std::fs::create_dir_all(&dir).unwrap();
+        let link = dir.join("photo.jpg");
+        std::os::unix::fs::symlink(&secret, &link).unwrap();
+        let rel = "_attachments/2026/07/photo.jpg";
+
+        let validated = validate_media_rel(&root, rel, "img");
+        assert!(
+            validated.is_err(),
+            "in-vault symlink to an outside file must not be returned, got {validated:?}"
+        );
+        let safe = safe_media_path(&root, rel);
+        assert!(safe.is_err(), "safe_media_path returned {safe:?}");
+        assert_eq!(std::fs::read(&secret).unwrap(), b"outside-bytes");
+    }
+
+    #[test]
+    fn containment_media_parent_symlink_rejected() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = vault.path().canonicalize().unwrap();
+        std::os::unix::fs::symlink(outside.path().canonicalize().unwrap(), root.join("_attachments")).unwrap();
+        let rel = "_attachments/2026/07/missing.jpg";
+        let resolved = resolve_media_abs(&root, rel);
+        assert!(
+            resolved.is_err(),
+            "missing leaf under an outside parent symlink must be rejected, got {resolved:?}"
+        );
+        let validated = validate_media_rel(&root, rel, "img");
+        assert!(validated.is_err(), "validate_media_rel returned {validated:?}");
+    }
 }

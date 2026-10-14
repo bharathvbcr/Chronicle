@@ -151,7 +151,7 @@ pub fn preferred_write_rel(rel: &str) -> String {
     p
 }
 
-fn abs_under_root(root: &Path, rel: &str) -> Result<PathBuf, ChronicleError> {
+pub(crate) fn abs_under_root(root: &Path, rel: &str) -> Result<PathBuf, ChronicleError> {
     let abs = root.join(rel);
     let root_resolved = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
 

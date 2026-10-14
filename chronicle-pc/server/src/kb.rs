@@ -207,12 +207,21 @@ pub fn move_note(
 
     let src = read_note_abs(root, &from_rel)?;
     if to_rel == from_rel {
-        // no-op move
-    } else {
-        let dst = root.join(&to_rel);
-        if dst.is_file() {
-            return Err(ApiError::conflict(format!("destination exists: {to_rel}")));
-        }
+        // Already at the archive (or explicit) destination. Writing and then
+        // remove_file would unlink the only copy. Leave the bytes untouched.
+        return Ok(json!({
+            "ok": true,
+            "from_path": from_rel,
+            "to_path": to_rel,
+            "quarantined": [],
+            "links_repaired": 0,
+            "files_updated": 0,
+            "changelog_appended": false,
+        }));
+    }
+    let dst = path_map::abs_under_root(root, &to_rel).map_err(|e| ApiError::bad_request(e.to_string()))?;
+    if dst.is_file() {
+        return Err(ApiError::conflict(format!("destination exists: {to_rel}")));
     }
 
     let bytes = std::fs::read(&src).map_err(|_| ApiError::not_found(format!("note not found: {from_rel}")))?;
@@ -220,7 +229,6 @@ pub fn move_note(
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    let dst = root.join(&to_rel);
     if let Some(parent) = dst.parent() {
         std::fs::create_dir_all(parent).map_err(|e| ApiError::internal(e.to_string()))?;
     }
@@ -329,4 +337,64 @@ pub(crate) fn entry_from_create(
         prose_edited: false,
         extra: Default::default(),
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn names_under(dir: &std::path::Path) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for ent in rd.flatten() {
+                let p = ent.path();
+                if ent.file_type().ok().is_some_and(|t| t.is_dir()) {
+                    stack.push(p);
+                } else if let Some(name) = p.file_name() {
+                    out.push(name.to_string_lossy().to_string());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn containment_move_parent_symlink_rejected() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = vault.path();
+        std::fs::create_dir_all(root.join("10-Work")).unwrap();
+        let src = root.join("10-Work/Hello.md");
+        std::fs::write(&src, b"stay-inside").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.join("90-Archive")).unwrap();
+
+        let moved = move_note(root, "10-Work/Hello.md", None, true);
+        assert!(moved.is_err(), "move followed a parent symlink: {moved:?}");
+        let leaked = names_under(outside.path());
+        assert!(leaked.is_empty(), "note landed outside the vault: {leaked:?}");
+        assert_eq!(std::fs::read(&src).unwrap(), b"stay-inside");
+    }
+
+    #[test]
+    fn containment_self_move_leaves_file() {
+        let vault = tempfile::tempdir().unwrap();
+        let root = vault.path();
+        std::fs::create_dir_all(root.join("90-Archive")).unwrap();
+        let archived = root.join("90-Archive/Kept.md");
+        let moved = root.join("90-Archive/Same.md");
+        let bytes = b"exactly-these-bytes";
+        std::fs::write(&archived, bytes).unwrap();
+        std::fs::write(&moved, bytes).unwrap();
+
+        move_note(root, "90-Archive/Kept.md", None, true).unwrap();
+        move_note(root, "90-Archive/Same.md", Some("90-Archive/Same.md"), false).unwrap();
+
+        assert!(archived.is_file(), "archive onto the same path unlinked the note");
+        assert!(moved.is_file(), "move onto the same path unlinked the note");
+        assert_eq!(std::fs::read(&archived).unwrap(), bytes);
+        assert_eq!(std::fs::read(&moved).unwrap(), bytes);
+        assert!(!root.join("_system/changelog.md").exists(), "no-op move wrote a changelog");
+    }
 }

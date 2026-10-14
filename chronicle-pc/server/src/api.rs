@@ -888,7 +888,18 @@ async fn delete_entry(
                 "entry {id} is processed=true and cannot be edited or deleted"
             )));
         }
+        // Test rendezvous sits before the lock, not after the re-check, so a
+        // racer can file `processed` while this call is blocked on the lock.
+        #[cfg(test)]
+        signal_delete_before_lock();
         let _guard = crate::lock::vault_lock(&state.root, Some(std::time::Duration::from_secs(30)))?;
+        let entry = crate::entries::load_entry(&path)
+            .ok_or_else(|| ApiError::internal(format!("failed to load entry: {id}")))?;
+        if entry.processed {
+            return Err(ApiError::conflict(format!(
+                "entry {id} is processed=true and cannot be edited or deleted"
+            )));
+        }
         std::fs::remove_file(&path).map_err(|e| crate::errors::ChronicleError::Io(e.to_string()))?;
         Ok(ok_json(json!({"ok": true, "deleted": id})))
     })
@@ -993,7 +1004,8 @@ macro_rules! upload_handler {
                 let (yyyy, mm) = crate::entries::shard_from_id(&id)?;
                 let n = next_media_index(&state.root, $kind, &id);
                 let rel = format!("_attachments/{yyyy}/{mm}/{id}_{n}.{}", $ext);
-                crate::paths::atomic_write_bytes(&state.root.join(&rel), &data)?;
+                let dest = crate::path_map::abs_under_root(&state.root, &rel)?;
+                crate::paths::atomic_write_bytes(&dest, &data)?;
                 let kind_s: &str = $kind;
                 if kind_s == "img" {
                     entry.images.push(rel.clone());
@@ -1825,6 +1837,36 @@ async fn spa_catch_all(
 }
 
 #[cfg(test)]
+static DELETE_PRE_LOCK: std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn signal_delete_before_lock() {
+    let guard = DELETE_PRE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(tx) = guard.as_ref() {
+        let _ = tx.send(());
+    }
+}
+
+#[cfg(test)]
+struct DeletePreLockArm;
+
+#[cfg(test)]
+fn arm_delete_pre_lock(tx: std::sync::mpsc::Sender<()>) -> DeletePreLockArm {
+    let mut guard = DELETE_PRE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = Some(tx);
+    DeletePreLockArm
+}
+
+#[cfg(test)]
+impl Drop for DeletePreLockArm {
+    fn drop(&mut self) {
+        let mut guard = DELETE_PRE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
+    }
+}
+
+#[cfg(test)]
 mod rebuild_index_tests {
     use super::*;
 
@@ -1836,6 +1878,146 @@ mod rebuild_index_tests {
         let both: RebuildIndexBody =
             serde_json::from_str(r#"{"process": false, "sqlite": true}"#).unwrap();
         assert_eq!(rebuild_index_flags(Some(both)), (false, true));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod containment_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use std::sync::Arc;
+    use tower::ServiceExt;
+
+    fn connect_info() -> crate::ConnectInfo {
+        crate::ConnectInfo {
+            host: "127.0.0.1".into(),
+            port: 0,
+            bind_host: "127.0.0.1".into(),
+            lan_ip: None,
+            base: "http://127.0.0.1".into(),
+            kb_proxied: false,
+            version: 1,
+            token: None,
+            auth_required: false,
+            tls: false,
+            tls_fp: None,
+        }
+    }
+
+    fn names_under(dir: &std::path::Path) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for ent in rd.flatten() {
+                let p = ent.path();
+                if ent.file_type().ok().is_some_and(|t| t.is_dir()) {
+                    stack.push(p);
+                } else if let Some(name) = p.file_name() {
+                    out.push(name.to_string_lossy().to_string());
+                }
+            }
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn containment_upload_parent_symlink_rejected() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = vault.path();
+        let id = "2026-07-09_120000-pc";
+        let entry_dir = root.join("_capture/entries/2026/07");
+        std::fs::create_dir_all(&entry_dir).unwrap();
+        std::fs::write(
+            entry_dir.join(format!("{id}.json")),
+            format!(
+                r#"{{"version":1,"id":"{id}","ts":"2026-07-09T12:00:00+00:00","type":"log","text":"hi","processed":false}}"#
+            ),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.join("_attachments")).unwrap();
+
+        let jpeg = b"\xff\xd8\xff\xe0not-a-real-jpeg-but-magic-matches";
+        let boundary = "----chroniclebound";
+        let mut raw = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"x.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n"
+        )
+        .into_bytes();
+        raw.extend_from_slice(jpeg);
+        raw.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let state = Arc::new(App::new(root.to_path_buf(), connect_info()));
+        let response = build_router(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/entries/{id}/images"))
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(raw))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(response.status(), StatusCode::CREATED, "upload must not follow a parent symlink");
+        let leaked = names_under(outside.path());
+        assert!(leaked.is_empty(), "upload wrote outside the vault: {leaked:?}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn containment_delete_rechecks_processed() {
+        let vault = tempfile::tempdir().unwrap();
+        let root = vault.path().to_path_buf();
+        let id = "2026-07-09_120000-pc";
+        let entry_dir = root.join("_capture/entries/2026/07");
+        std::fs::create_dir_all(&entry_dir).unwrap();
+        let path = entry_dir.join(format!("{id}.json"));
+        let unprocessed = format!(
+            r#"{{"version":1,"id":"{id}","ts":"2026-07-09T12:00:00+00:00","type":"log","text":"keep","processed":false}}"#
+        );
+        let processed = format!(
+            r#"{{"version":1,"id":"{id}","ts":"2026-07-09T12:00:00+00:00","type":"log","text":"keep","processed":true}}"#
+        );
+        std::fs::write(&path, &unprocessed).unwrap();
+
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let root_holder = root.clone();
+        let holder = std::thread::spawn(move || {
+            let guard = crate::lock::vault_lock(&root_holder, None).unwrap();
+            held_tx.send(()).unwrap();
+            let _ = release_rx.recv();
+            drop(guard);
+        });
+        held_rx.recv().unwrap();
+
+        let (pre_tx, pre_rx) = std::sync::mpsc::channel();
+        let _arm = arm_delete_pre_lock(pre_tx);
+        let state = Arc::new(App::new(root.clone(), connect_info()));
+        let task = tokio::spawn(async move {
+            delete_entry(State(state), AxumPath(id.to_string())).await
+        });
+        tokio::task::spawn_blocking(move || pre_rx.recv().expect("delete reached the lock"))
+            .await
+            .unwrap();
+        std::fs::write(&path, &processed).unwrap();
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+
+        let err = task.await.unwrap().expect_err("filed entry must conflict");
+        assert_eq!(err.status, StatusCode::CONFLICT);
+        assert!(
+            err.detail.to_string().contains("processed=true"),
+            "detail={}",
+            err.detail
+        );
+        assert!(path.is_file(), "delete unlinked a file filed after the first check");
+        let body = std::fs::read_to_string(&path).unwrap();
+        assert!(body.contains("\"processed\":true") || body.contains("\"processed\": true"), "{body}");
     }
 }
 
