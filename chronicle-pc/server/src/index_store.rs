@@ -525,26 +525,146 @@ pub fn search_with_rt(root: &Path, cfg: &ChronicleConfig, rt: &LlmRuntime, args:
     search_inner(root, cfg, &e, args)
 }
 
+/// Search posture read from `config.json` itself. `ChronicleConfig` is only the
+/// embedder model: `load_config` treats a dangling symlink and a directory as
+/// "no config", and `ensure_config` would write one. Search must not.
+enum ConfigPosture {
+    /// Absent, or a JSON object with no e2ee key / null e2ee. Indexed text is readable.
+    Plain,
+    /// Present but not a trustworthy plain or locked config. Return no document text.
+    Unreadable,
+    /// Loadable e2ee block. This server has no unlock, so the vault stays locked.
+    Locked,
+}
+
+fn e2ee_block_loadable(block: &Value) -> bool {
+    let Some(obj) = block.as_object() else {
+        return false;
+    };
+    let Some(kdf) = obj.get("kdf").and_then(Value::as_object) else {
+        return false;
+    };
+    if obj.get("check").and_then(Value::as_object).is_none() {
+        return false;
+    }
+    kdf.get("alg").and_then(Value::as_str) == Some("pbkdf2-sha256")
+}
+
+fn config_posture(root: &Path) -> ConfigPosture {
+    let path = root.join("config.json");
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return ConfigPosture::Plain,
+        Err(_) => return ConfigPosture::Unreadable,
+    };
+    // Follow links ourselves only after symlink_metadata. A dangling link, a
+    // loop, or a link whose target is not a regular file (including a directory)
+    // is unreadable — not "missing".
+    let regular = if meta.file_type().is_symlink() {
+        match std::fs::metadata(&path) {
+            Ok(followed) if followed.is_file() => true,
+            _ => false,
+        }
+    } else {
+        meta.is_file()
+    };
+    if !regular {
+        return ConfigPosture::Unreadable;
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => return ConfigPosture::Unreadable,
+    };
+    if bytes.is_empty() {
+        return ConfigPosture::Unreadable;
+    }
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return ConfigPosture::Unreadable;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return ConfigPosture::Unreadable;
+    };
+    let Some(obj) = value.as_object() else {
+        return ConfigPosture::Unreadable;
+    };
+    match obj.get("e2ee") {
+        None | Some(Value::Null) => ConfigPosture::Plain,
+        Some(block) if e2ee_block_loadable(block) => ConfigPosture::Locked,
+        Some(_) => ConfigPosture::Unreadable,
+    }
+}
+
+fn documents_has_sealed_column(conn: &Connection) -> bool {
+    let mut stmt = match conn.prepare("PRAGMA table_info(documents)") {
+        Ok(stmt) => stmt,
+        Err(_) => return false,
+    };
+    let names: Vec<String> = match stmt.query_map([], |row| row.get::<_, String>(1)) {
+        Ok(rows) => rows.flatten().collect(),
+        Err(_) => return false,
+    };
+    names.iter().any(|name| name == "sealed")
+}
+
+struct SearchRead {
+    conn: Connection,
+    /// When set, rows with `sealed = 1` are omitted. Rows are never deleted.
+    omit_sealed: bool,
+}
+
+/// `None` → caller returns no document text. Unreadable config returns before
+/// the database is opened, so a present index is not read.
+fn open_search_db(root: &Path) -> Option<SearchRead> {
+    let omit_sealed = match config_posture(root) {
+        ConfigPosture::Unreadable => return None,
+        ConfigPosture::Plain => false,
+        ConfigPosture::Locked => true,
+    };
+    let db = index_db_path(root);
+    if !db.is_file() {
+        return None;
+    }
+    let conn = Connection::open(&db).ok()?;
+    if omit_sealed {
+        // No sealed column → a row cannot be proved unsealed. Do not SELECT text.
+        if !documents_has_sealed_column(&conn) {
+            return None;
+        }
+    }
+    Some(SearchRead { conn, omit_sealed })
+}
+
+fn knn_sql(omit_sealed: bool) -> &'static str {
+    if omit_sealed {
+        "SELECT d.id, d.kind, d.path, d.text, v.distance                        FROM vec_documents v JOIN documents d ON d.id = v.id                        WHERE v.embedding MATCH ?1 AND k = ?2 AND (d.sealed IS NULL OR d.sealed != 1) ORDER BY v.distance"
+    } else {
+        "SELECT d.id, d.kind, d.path, d.text, v.distance                        FROM vec_documents v JOIN documents d ON d.id = v.id                        WHERE v.embedding MATCH ?1 AND k = ?2 ORDER BY v.distance"
+    }
+}
+
+fn document_scan_sql(omit_sealed: bool) -> &'static str {
+    if omit_sealed {
+        "SELECT id, kind, path, text, embedding_json FROM documents WHERE sealed IS NULL OR sealed != 1"
+    } else {
+        "SELECT id, kind, path, text, embedding_json FROM documents"
+    }
+}
+
 pub fn search_inner(
     root: &Path,
     cfg: &ChronicleConfig,
     embedder: &Embedder,
     args: SearchArgs<'_>,
 ) -> Vec<Value> {
-    let db = index_db_path(root);
-    if !db.is_file() {
+    let Some(search_db) = open_search_db(root) else {
         return vec![];
-    }
+    };
+    let SearchRead { conn, omit_sealed } = search_db;
     let kind_filter: Option<Vec<String>> = args.kinds.clone().or_else(|| {
         kinds_for_scope(args.scope).map(|ks| ks.into_iter().map(String::from).collect())
     });
     let id_filter: Option<HashSet<String>> = args.ids.as_ref().map(|i| i.iter().cloned().collect());
     let limit = args.text_limit.unwrap_or(Some(SEARCH_TEXT_DEFAULT_LIMIT));
-
-    let conn = match Connection::open(&db) {
-        Ok(c) => c,
-        Err(_) => return vec![],
-    };
     let q_emb = if embedder.reachable {
         (embedder.f)(args.query, &cfg.models.embed)
     } else {
@@ -570,8 +690,7 @@ pub fn search_inner(
         .unwrap_or(false);
     if !q_emb.is_empty() && vec_ready {
         let overfetch = (args.top_k * 4).max(args.top_k);
-        let knn_sql = "SELECT d.id, d.kind, d.path, d.text, v.distance                        FROM vec_documents v JOIN documents d ON d.id = v.id                        WHERE v.embedding MATCH ?1 AND k = ?2 ORDER BY v.distance";
-        match conn.prepare(knn_sql) {
+        match conn.prepare(knn_sql(omit_sealed)) {
             Ok(mut stmt) => {
                 let rows = stmt.query_map(
                     rusqlite::params![
@@ -617,7 +736,7 @@ pub fn search_inner(
 
     let mut raws: Vec<RawRow> = Vec::new();
     {
-        let Ok(mut stmt) = conn.prepare("SELECT id, kind, path, text, embedding_json FROM documents") else {
+        let Ok(mut stmt) = conn.prepare(document_scan_sql(omit_sealed)) else {
             return vec![];
         };
         let Ok(rows_iter) = stmt.query_map([], |r| {
@@ -673,8 +792,7 @@ pub fn search_inner(
 }
 
 pub fn get_documents_by_ids(root: &Path, doc_ids: &[String], text_limit: Option<usize>) -> Vec<Value> {
-    let db = index_db_path(root);
-    if !db.is_file() || doc_ids.is_empty() {
+    if doc_ids.is_empty() {
         return vec![];
     }
     let mut wanted: Vec<String> = Vec::new();
@@ -687,9 +805,17 @@ pub fn get_documents_by_ids(root: &Path, doc_ids: &[String], text_limit: Option<
     if wanted.is_empty() {
         return vec![];
     }
-    let Ok(conn) = Connection::open(&db) else { return vec![] };
+    let Some(SearchRead { conn, omit_sealed }) = open_search_db(root) else {
+        return vec![];
+    };
     let placeholders = vec!["?"; wanted.len()].join(",");
-    let sql = format!("SELECT id, kind, path, text FROM documents WHERE id IN ({placeholders})");
+    let sql = if omit_sealed {
+        format!(
+            "SELECT id, kind, path, text FROM documents WHERE id IN ({placeholders}) AND (sealed IS NULL OR sealed != 1)"
+        )
+    } else {
+        format!("SELECT id, kind, path, text FROM documents WHERE id IN ({placeholders})")
+    };
     let Ok(mut stmt) = conn.prepare(&sql) else { return vec![] };
     let params: Vec<&dyn rusqlite::ToSql> = wanted.iter().map(|w| w as &dyn rusqlite::ToSql).collect();
     let Ok(rows) = stmt.query_map(params.as_slice(), |r| {
@@ -827,5 +953,231 @@ mod vec_tests {
         // Contract: probe=true + unset env → enabled. (No global env mutation;
         // the wrapper test above covers disabled mode end-to-end.)
         assert!(vec_extension_usable());
+    }
+
+    fn insert_indexed_note(root: &Path, id: &str, text: &str) {
+        let db = index_db_path(root);
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                path TEXT,
+                text TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                embed_model TEXT,
+                embedding_json TEXT,
+                updated_at TEXT
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO documents (id, kind, path, text, content_hash) VALUES (?1, 'note', 'notes/x.md', ?2, 'hash')",
+            rusqlite::params![id, text],
+        )
+        .unwrap();
+    }
+
+    fn keyword_hits(root: &Path, query: &str) -> Vec<Value> {
+        search_inner(
+            root,
+            &ChronicleConfig::defaults(),
+            &Embedder::fixed(HashMap::new(), 0),
+            SearchArgs {
+                query,
+                top_k: 8,
+                kinds: None,
+                scope: None,
+                text_limit: None,
+                ids: None,
+            },
+        )
+    }
+
+    fn assert_no_text(hits: &[Value], token: &str) {
+        assert!(hits.is_empty(), "expected no hits, got {hits:?}");
+        assert!(
+            !serde_json::to_string(hits).unwrap().contains(token),
+            "indexed text leaked"
+        );
+    }
+
+    fn assert_has_token(hits: &[Value], token: &str) {
+        let blob = serde_json::to_string(hits).unwrap();
+        assert!(blob.contains(token), "expected {token} in {blob}");
+    }
+
+    const LOADABLE_E2EE: &str = r#"{"layout_version":2,"e2ee":{"enabled":true,"kdf":{"alg":"pbkdf2-sha256","iter":600000,"salt":"c2FsdA=="},"check":{"nonce":"bm9uY2U=","ct":"Y3Q="}}}"#;
+
+    #[test]
+    fn truncated_config_returns_no_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "truncated-config-token-9f3a";
+        insert_indexed_note(root, "doc-truncated", token);
+        std::fs::write(root.join("config.json"), "{").unwrap();
+        assert_no_text(&keyword_hits(root, token), token);
+    }
+
+    #[test]
+    fn directory_config_returns_no_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "directory-config-token-9f3a";
+        insert_indexed_note(root, "doc-directory", token);
+        std::fs::create_dir(root.join("config.json")).unwrap();
+        assert_no_text(&keyword_hits(root, token), token);
+        assert_no_text(
+            &get_documents_by_ids(root, &["doc-directory".to_string()], None),
+            token,
+        );
+        assert!(root.join("config.json").is_dir(), "search must not replace a directory config");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_config_symlink_returns_no_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "dangling-config-token-9f3a";
+        insert_indexed_note(root, "doc-dangling", token);
+        std::os::unix::fs::symlink("missing-config-target.json", root.join("config.json")).unwrap();
+        assert_no_text(&keyword_hits(root, token), token);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_symlink_loop_returns_no_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "symlink-loop-token-9f3a";
+        insert_indexed_note(root, "doc-loop", token);
+        std::os::unix::fs::symlink("config.json", root.join("config.json")).unwrap();
+        assert_no_text(&keyword_hits(root, token), token);
+    }
+
+    #[test]
+    fn missing_config_returns_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "missing-config-token-9f3a";
+        insert_indexed_note(root, "doc-missing", token);
+        assert_has_token(&keyword_hits(root, token), token);
+        let err = std::fs::symlink_metadata(root.join("config.json")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn plain_config_without_e2ee_returns_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "plain-config-token-9f3a";
+        insert_indexed_note(root, "doc-plain", token);
+        std::fs::write(root.join("config.json"), r#"{"layout_version":2}"#).unwrap();
+        assert_has_token(&keyword_hits(root, token), token);
+    }
+
+    #[test]
+    fn null_e2ee_returns_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "null-e2ee-token-9f3a";
+        insert_indexed_note(root, "doc-null-e2ee", token);
+        std::fs::write(root.join("config.json"), r#"{"layout_version":2,"e2ee":null}"#).unwrap();
+        assert_has_token(&keyword_hits(root, token), token);
+    }
+
+    #[test]
+    fn enabled_e2ee_without_kdf_returns_no_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "enabled-without-kdf-token-9f3a";
+        insert_indexed_note(root, "doc-enabled", token);
+        std::fs::write(root.join("config.json"), r#"{"e2ee":{"enabled":true}}"#).unwrap();
+        assert_no_text(&keyword_hits(root, token), token);
+    }
+
+    #[test]
+    fn loadable_e2ee_without_sealed_column_returns_no_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "locked-no-sealed-column-token-9f3a";
+        insert_indexed_note(root, "doc-locked-nosealed", token);
+        std::fs::write(root.join("config.json"), LOADABLE_E2EE).unwrap();
+        assert_no_text(&keyword_hits(root, token), token);
+        assert_no_text(
+            &get_documents_by_ids(root, &["doc-locked-nosealed".to_string()], None),
+            token,
+        );
+    }
+
+    #[test]
+    fn loadable_e2ee_omits_sealed_rows_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let db = index_db_path(root);
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE documents (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                path TEXT,
+                text TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                embed_model TEXT,
+                embedding_json TEXT,
+                updated_at TEXT,
+                sealed INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO documents (id, kind, path, text, content_hash, sealed) VALUES ('sealed-row', 'note', 'a.md', 'sealedtoken-keep-hidden sharedtoken', 'h1', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO documents (id, kind, path, text, content_hash, sealed) VALUES ('open-row', 'note', 'b.md', 'opentoken-visible sharedtoken', 'h2', 0)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        std::fs::write(root.join("config.json"), LOADABLE_E2EE).unwrap();
+
+        let hits = keyword_hits(root, "sharedtoken");
+        assert_eq!(hits.len(), 1, "only the unsealed row, got {hits:?}");
+        let blob = serde_json::to_string(&hits).unwrap();
+        assert!(blob.contains("opentoken-visible"), "{blob}");
+        assert!(!blob.contains("sealedtoken-keep-hidden"), "{blob}");
+
+        let by_id = get_documents_by_ids(
+            root,
+            &["sealed-row".to_string(), "open-row".to_string()],
+            None,
+        );
+        assert_eq!(by_id.len(), 1, "get_documents_by_ids leaked sealed text: {by_id:?}");
+        let by_blob = serde_json::to_string(&by_id).unwrap();
+        assert!(by_blob.contains("opentoken-visible"), "{by_blob}");
+        assert!(!by_blob.contains("sealedtoken-keep-hidden"), "{by_blob}");
+
+        let still: i64 = Connection::open(&db)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM documents WHERE sealed = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(still, 1, "sealed rows must not be deleted");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_plain_config_returns_indexed_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let token = "symlink-plain-config-token-9f3a";
+        insert_indexed_note(root, "doc-symlink-plain", token);
+        std::fs::write(root.join("plain-config.json"), r#"{"layout_version":2}"#).unwrap();
+        std::os::unix::fs::symlink("plain-config.json", root.join("config.json")).unwrap();
+        assert_has_token(&keyword_hits(root, token), token);
     }
 }
