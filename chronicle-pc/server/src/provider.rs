@@ -305,10 +305,7 @@ pub fn build_provider(cfg: &ChronicleConfig) -> Result<(String, Box<dyn ChatProv
                 )
             })?;
             let base = validate_grok_base_url(&cfg.llm.grok.base_url).map_err(|_| {
-                ChronicleError::Llm(format!(
-                    "Grok base_url must be https://api.x.ai only; refused '{}'",
-                    cfg.llm.grok.base_url
-                ))
+                ChronicleError::Llm("Grok base_url must be https://api.x.ai only".into())
             })?;
             Ok((pname, Box::new(crate::grok::GrokProvider { base_url: base, api_key: key, cfg: cfg.clone() })))
         }
@@ -426,5 +423,55 @@ mod vision_consent_tests {
         let cfg = cfg_with("grok", true, false);
         let (name, _p) = build_vision_provider(&cfg).expect("degrades to local, not an error");
         assert_eq!(name, "ollama");
+    }
+}
+
+#[cfg(test)]
+mod grok_base_url_log_tests {
+    use super::*;
+
+    const REJECTED: &str = "https://user:secret-token-zz@evil.example";
+    const EXPECTED: &str = "Grok base_url must be https://api.x.ai only";
+
+    #[test]
+    fn grok_base_url_refusal_omits_secret() {
+        assert!(
+            validate_grok_base_url(REJECTED).is_err(),
+            "main validator accepted the probe URL; refusing to weaken it"
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("secrets.json");
+        std::fs::write(
+            &path,
+            r#"{"cloud_consent":true,"grok_api_key":"test-key-not-the-probe"}"#,
+        )
+        .expect("write secrets");
+        let prev = std::env::var("CHRONICLE_SECRETS").ok();
+        std::env::set_var("CHRONICLE_SECRETS", &path);
+        struct Restore(Option<String>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(v) => std::env::set_var("CHRONICLE_SECRETS", v),
+                    None => std::env::remove_var("CHRONICLE_SECRETS"),
+                }
+            }
+        }
+        let _restore = Restore(prev);
+        let mut cfg = ChronicleConfig::default();
+        cfg.llm.provider = "grok".into();
+        cfg.llm.cloud_consent = true;
+        cfg.llm.grok.base_url = REJECTED.into();
+        let err = match build_provider(&cfg) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("expected grok base_url refusal"),
+        };
+        assert!(
+            !err.contains("secret-token-zz"),
+            "grok error leaked url: {err}"
+        );
+        assert!(!err.contains("user"), "grok error contains user: {err}");
+        assert!(!err.contains('@'), "grok error contains userinfo: {err}");
+        assert_eq!(err, EXPECTED);
     }
 }

@@ -199,12 +199,7 @@ impl App {
     pub fn apply_ollama_settings(&self, base_url: &str, num_ctx: i64, temperature: Option<f64>) {
         let mut rt = self.llm.write().unwrap();
         match crate::provider::validate_ollama_base_url(base_url) {
-            Err(_) => {
-                eprintln!(
-                    "WARNING chronicle: Rejecting non-private ollama.base_url {base_url:?}; keeping {}",
-                    rt.base_url
-                );
-            }
+            Err(_) => warn_rejected_ollama_base(),
             Ok(cleaned) => {
                 if !cleaned.is_empty() {
                     rt.base_url = cleaned;
@@ -222,4 +217,72 @@ impl App {
 
 pub fn log_line(level: &str, msg: &str) {
     eprintln!("{level} chronicle: {msg}");
+}
+
+/// One literal, no format args. The rejected URL and the previous base can both carry userinfo.
+macro_rules! ollama_reject_warning {
+    ($text:literal) => {
+        #[cfg(test)]
+        fn rejected_ollama_base_warning() -> &'static str {
+            $text
+        }
+        fn warn_rejected_ollama_base() {
+            eprintln!($text);
+        }
+    };
+}
+
+ollama_reject_warning!(
+    "WARNING chronicle: Rejecting non-private ollama.base_url; keeping the previous base"
+);
+
+#[cfg(test)]
+mod rejected_base_url_log_tests {
+    use super::*;
+
+    const REJECTED: &str = "https://user:secret-token-zz@evil.example";
+    const PREVIOUS: &str = "http://127.0.0.1:11434";
+
+    fn test_app() -> App {
+        App::new(
+            std::path::PathBuf::from("/tmp"),
+            ConnectInfo {
+                host: "127.0.0.1".into(),
+                port: 8741,
+                bind_host: "127.0.0.1".into(),
+                lan_ip: None,
+                base: "http://127.0.0.1:8741".into(),
+                kb_proxied: false,
+                version: 1,
+                token: None,
+                auth_required: false,
+                tls: false,
+                tls_fp: None,
+            },
+        )
+    }
+
+    #[test]
+    fn rejected_ollama_base_url_is_not_logged() {
+        assert!(
+            crate::provider::validate_ollama_base_url(REJECTED).is_err(),
+            "main validator accepted the probe URL; refusing to weaken it"
+        );
+        let app = test_app();
+        {
+            let mut rt = app.llm.write().unwrap();
+            rt.base_url = PREVIOUS.into();
+        }
+        app.apply_ollama_settings(REJECTED, 0, None);
+        assert_eq!(app.llm_runtime().base_url, PREVIOUS);
+
+        let warning = rejected_ollama_base_warning();
+        assert_eq!(
+            warning,
+            "WARNING chronicle: Rejecting non-private ollama.base_url; keeping the previous base"
+        );
+        for forbidden in ["secret-token-zz", "@", "user", "evil.example", "http"] {
+            assert!(!warning.contains(forbidden), "{forbidden} in warning {warning}");
+        }
+    }
 }
