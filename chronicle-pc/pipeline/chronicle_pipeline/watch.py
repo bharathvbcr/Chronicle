@@ -59,10 +59,11 @@ def _snapshot_diff(before: dict[str, int], after: dict[str, int]) -> dict[str, i
 class DebouncedWatch:
     """One in-flight run plus an ignore window.
 
-    The snapshot taken around the run is that run's own writes. A create or
-    modify during processing (after that snapshot) or during the ignore window
-    that is not in the delta schedules exactly one follow-up after the window.
-    A later poll must not adopt that create into the baseline.
+    An explicit ``capture_self_writes`` freezes the self-write snapshot.
+    Otherwise a path ``note`` saw during the run is an echo, and any other path
+    that did not exist before the run is one follow-up. That path is not copied
+    into the baseline. A rewrite of a path that already existed is the run's own
+    write and does not schedule another pass.
     """
 
     def __init__(
@@ -91,6 +92,7 @@ class DebouncedWatch:
         self._accounted = snapshot()
         self._before: dict[str, int] = {}
         self._captured: dict[str, int] | None = None
+        self._capture_explicit = False
         self._external: set[str] = set()
 
     def close(self) -> None:
@@ -113,16 +115,16 @@ class DebouncedWatch:
             return wait
 
     def capture_self_writes(self) -> None:
-        """Snapshot the run's own writes. A later create while processing is not part of it.
+        """Freeze the self-write snapshot while ``processing`` is still true.
 
-        The finish step calls this if the run did not. Calling it earlier (still
-        inside the run, while ``processing`` is true) freezes the delta so a
-        file created after this point is unexplained.
+        Only an explicit call does this. Finish does not invent one: without it,
+        a new path is a self-write only when ``note`` was given that path.
         """
         with self._lock:
             if self._closed or not self.processing or self._captured is not None:
                 return
             self._captured = self._snapshot()
+            self._capture_explicit = True
 
     def note(self, paths: set[str] | None = None) -> None:
         """Watchdog: something changed. Echoes of the run's own delta do not re-arm."""
@@ -197,6 +199,7 @@ class DebouncedWatch:
         self.processing = True
         self._before = self._snapshot()
         self._captured = None
+        self._capture_explicit = False
         self._external.clear()
         self._owed = False
         self._lock.release()
@@ -212,22 +215,37 @@ class DebouncedWatch:
         try:
             if self._closed:
                 return
-            if self._captured is None:
-                self._captured = self._snapshot()
-            after = self._snapshot()
-            late = _snapshot_diff(self._captured, after)
-            own_paths = set(_snapshot_diff(self._before, self._captured))
-            # Baseline stays the self-write snapshot. Late creates stay visible.
-            unexplained = set(late) | (self._external - own_paths)
-            self._accounted = dict(self._captured)
-            if unexplained:
-                self._owed = True
+            if self._capture_explicit and self._captured is not None:
+                after = self._snapshot()
+                late = _snapshot_diff(self._captured, after)
+                own_paths = set(_snapshot_diff(self._before, self._captured))
+                # Baseline stays the frozen self-write snapshot.
+                unexplained = set(late) | (self._external - own_paths)
+                self._accounted = dict(self._captured)
+                if unexplained:
+                    self._owed = True
+            else:
+                after = self._snapshot()
+                # Noted paths are echoes. Any other path that did not exist
+                # before the run is a user create and must stay out of the baseline.
+                user_creates = {
+                    path
+                    for path in after
+                    if path not in self._before and path not in self._external
+                }
+                accounted = dict(after)
+                for path in user_creates:
+                    accounted.pop(path, None)
+                self._accounted = accounted
+                if user_creates:
+                    self._owed = True
             self.ignore_until = self._clock() + self.debounce_s + _IGNORE_SLACK_S
             if self._owed and self._use_timer:
                 delay = max(0.0, self.ignore_until - self._clock())
                 self._start_timer_locked(delay)
         finally:
             self._captured = None
+            self._capture_explicit = False
             self._external.clear()
             self.processing = False
             self._before = {}

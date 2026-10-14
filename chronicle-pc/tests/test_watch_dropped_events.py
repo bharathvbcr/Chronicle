@@ -269,9 +269,10 @@ def _drive_poller(
     index_fn: Callable[[], None] | None = None,
     calls: list[float],
     clock: ManualClock,
+    prove_no_third: bool = False,
 ) -> None:
     """Pump ``run_watch``'s poller until two runs have happened or the step cap hits."""
-    state = {"sleeps": 0, "triggered": False, "created": False}
+    state = {"sleeps": 0, "triggered": False, "created": False, "after_second": 0}
 
     def sleeper(seconds: float) -> None:
         state["sleeps"] += 1
@@ -283,6 +284,13 @@ def _drive_poller(
         elif len(calls) == 1 and not state["created"] and on_after_first_run is not None:
             on_after_first_run()
             state["created"] = True
+        if len(calls) >= 2 and prove_no_third:
+            # The follow-up's own rewrite must not schedule another run.
+            state["after_second"] += 1
+            clock.advance(30.0)
+            if state["after_second"] >= 2:
+                raise KeyboardInterrupt
+            return
         clock.advance(seconds)
         if len(calls) >= 2:
             raise KeyboardInterrupt
@@ -359,6 +367,7 @@ def test_poller_user_create_during_process_is_followed_up_once(
         index_fn=lambda: None,
         calls=calls,
         clock=clock,
+        prove_no_third=True,
     )
     assert len(calls) == 2
 
