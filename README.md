@@ -67,3 +67,10 @@ The repo's archived `KnowledgeBase/` is not the live data folder. `kb/notes/` is
 Both apps carry the same [data contract](chronicle-pc/CONTRACT.md) and JSON schemas. Contract version **1.11** and vault layout version **2** are separate version numbers. Run `bash scripts/check-contract-sync.sh` after shared contract changes.
 
 See [development checks](docs/DEVELOPMENT.md) for the actual commands, source owners, and limits of local verification. Source inspection and tests do not establish a signed release, physical-device behavior, or successful cloud-provider calls.
+
+## License & Acknowledgements
+
+Released under the [MIT License](LICENSE).
+
+- **[Obsidian](https://obsidian.md/)** — Inspired the local-first Markdown vault and frontmatter compatibility design (`vault_mirror`).
+- **Lora** (*Cyreal*, SIL Open Font License 1.1) & **Source Sans 3** (*Adobe*, SIL Open Font License 1.1) — Bundled typography in `chronicle-android/app/src/main/res/font/`.
