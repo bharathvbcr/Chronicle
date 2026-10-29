@@ -256,7 +256,10 @@ mod tests {
         let out = dir.path().join("out.zip");
         run_backup(Some(&vault), Some(&out), false).unwrap();
         let mut z = zip::ZipArchive::new(std::fs::File::open(&out).unwrap()).unwrap();
-        let mut names: Vec<String> = z.file_names().map(String::from).collect();
+        let mut names: Vec<String> = z
+            .file_names()
+            .map(|name| name.expect("zip entry name").into_owned())
+            .collect();
         names.sort();
         assert_eq!(
             names,
