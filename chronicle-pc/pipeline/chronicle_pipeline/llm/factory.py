@@ -61,9 +61,7 @@ def get_provider(
         grok_opts = llm.grok
         base = (grok_opts.base_url if grok_opts else None) or DEFAULT_GROK_BASE
         if not is_allowed_grok_url(base):
-            raise LlmError(
-                f"Grok base_url must be https://api.x.ai only; refused {base!r}"
-            )
+            raise LlmError("Grok base_url must be https://api.x.ai only")
         model = (grok_opts.model if grok_opts else None) or cfg.models.llm or DEFAULT_GROK_MODEL
         vision = cfg.models.vision or model
         return GrokProvider(

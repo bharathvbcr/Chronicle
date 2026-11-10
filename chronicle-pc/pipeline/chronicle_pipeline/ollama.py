@@ -64,9 +64,7 @@ def apply_settings(
         cleaned = (base_url or "").strip().rstrip("/")
         if cleaned and not is_private_or_loopback_url(cleaned):
             log.warning(
-                "Rejecting non-private ollama.base_url %r; keeping %s",
-                cleaned,
-                OLLAMA_BASE,
+                "Rejecting non-private ollama.base_url; keeping the previous base"
             )
         else:
             OLLAMA_BASE = cleaned or "http://localhost:11434"

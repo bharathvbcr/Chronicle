@@ -38,9 +38,7 @@ class GrokProvider:
 
         raw_base = (base_url or DEFAULT_GROK_BASE).rstrip("/")
         if not is_allowed_grok_url(raw_base):
-            raise LlmError(
-                f"Grok base_url must be https://api.x.ai only; refused {raw_base!r}"
-            )
+            raise LlmError("Grok base_url must be https://api.x.ai only")
         self.api_key = key
         self.base_url = validate_grok_base_url(raw_base)
         self.default_model = default_model or DEFAULT_GROK_MODEL
