@@ -130,8 +130,30 @@ def save_config(cfg: ChronicleConfig, chronicle_dir: Path | str | None = None) -
     return path
 
 
+class UnreadableConfigError(RuntimeError):
+    """config.json is a symlink that does not name a readable file."""
+
+
+def _symlink_without_file(path: Path) -> bool:
+    """True for a dangling, looping, or directory symlink. False otherwise.
+
+    exists() is false for dangling and ELOOP links, so this has to use
+    is_symlink() first. A symlink to a regular file is not this case.
+    """
+    if not path.is_symlink():
+        return False
+    try:
+        return not path.is_file()
+    except OSError:
+        return True
+
+
 def ensure_config(chronicle_dir: Path | str | None = None) -> ChronicleConfig:
     path = config_path(chronicle_dir)
+    if _symlink_without_file(path):
+        raise UnreadableConfigError(
+            "config.json symlink does not point at a readable file"
+        )
     if path.exists():
         return load_config(chronicle_dir)
     from .vault_layout import CURRENT_LAYOUT_VERSION
