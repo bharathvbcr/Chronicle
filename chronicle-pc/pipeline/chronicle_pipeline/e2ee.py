@@ -30,6 +30,10 @@ from .paths import atomic_write_json, read_json, resolve_chronicle_dir
 
 E2EE_CHECK_PLAINTEXT = b"chronicle-e2ee-check-v1"
 DEFAULT_KDF_ITERATIONS = 600_000
+MIN_KDF_ITERATIONS = 100_000
+# 1_000_000 is the last count that may run. One more is refused before PBKDF2.
+MAX_KDF_ITERATIONS = 1_000_000
+MAX_PASSPHRASE_CHARS = 1024
 _KEY_LEN = 32
 _NONCE_LEN = 12
 _SALT_LEN = 16
@@ -55,12 +59,33 @@ def _unb64(raw: str) -> bytes:
     return base64.b64decode(raw)
 
 
-def derive_key(passphrase: str, salt: bytes, iterations: int) -> bytes:
+def validate_kdf_request(passphrase: str, iterations: object) -> int:
+    """Reject unbounded KDF inputs. Does not call hashlib.
+
+    ``iterations`` must already be an ``int``. ``int()`` on a string or float
+    is a coercion, not a check — a huge digit string would otherwise run.
+    """
+    if not isinstance(passphrase, str):
+        raise E2eeError("passphrase must be a string")
     if not passphrase:
         raise E2eeError("passphrase must not be empty")
-    if iterations < 100_000:
+    if len(passphrase) > MAX_PASSPHRASE_CHARS:
+        raise E2eeError("passphrase longer than 1024 characters refused")
+    # bool is a subclass of int; True would become 1 and then look like a count.
+    if isinstance(iterations, bool) or not isinstance(iterations, int):
+        raise E2eeError("kdf iterations must be an int")
+    if iterations < MIN_KDF_ITERATIONS:
         raise E2eeError("kdf iterations below 100_000 refused")
-    return hashlib.pbkdf2_hmac("sha256", passphrase.encode("utf-8"), salt, iterations, dklen=_KEY_LEN)
+    if iterations > MAX_KDF_ITERATIONS:
+        raise E2eeError("kdf iterations above 1_000_000 refused")
+    return iterations
+
+
+def derive_key(passphrase: str, salt: bytes, iterations: int) -> bytes:
+    iterations = validate_kdf_request(passphrase, iterations)
+    return hashlib.pbkdf2_hmac(
+        "sha256", passphrase.encode("utf-8"), salt, iterations, dklen=_KEY_LEN
+    )
 
 
 def default_e2ee_block(passphrase: str) -> dict[str, Any]:
@@ -120,8 +145,12 @@ def unlock(root: Path | str | None, passphrase: str) -> bool:
         raise E2eeError("e2ee is not configured for this vault")
     kdf = block["kdf"]
     check = block["check"]
+    # Missing iter is not zero. Coercing with int() would turn a digit string
+    # into a count and then run PBKDF2.
+    raw_iter = kdf["iter"] if isinstance(kdf, dict) and "iter" in kdf else None
+    iterations = validate_kdf_request(passphrase, raw_iter)
     try:
-        key = derive_key(passphrase, _unb64(kdf["salt"]), int(kdf.get("iter", 0)))
+        key = derive_key(passphrase, _unb64(kdf["salt"]), iterations)
         plain = AESGCM(key).decrypt(_unb64(check["nonce"]), _unb64(check["ct"]), None)
     except (KeyError, ValueError, TypeError, InvalidTag) as e:
         raise E2eeError(f"unlock failed: {type(e).__name__}") from e

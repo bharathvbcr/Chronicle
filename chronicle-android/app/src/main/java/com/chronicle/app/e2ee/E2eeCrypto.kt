@@ -28,20 +28,39 @@ object E2eeCrypto {
     const val CHECK_PLAINTEXT = "chronicle-e2ee-check-v1"
     const val DEFAULT_ITERATIONS = 600_000
     const val MIN_ITERATIONS = 100_000
+    /** 1_000_000 may run. 1_000_001 is refused before PBKDF2. */
+    const val MAX_ITERATIONS = 1_000_000
+    const val MAX_PASSPHRASE_CHARS = 1024
     const val KEY_LEN_BITS = 256
     const val NONCE_LEN = 12
     const val SALT_LEN = 16
 
     private val random = SecureRandom()
 
+    /**
+     * PBKDF2 itself. Tests replace this to prove a refused count never reaches
+     * the factory: Robolectric does not consult a [java.security.Provider]
+     * inserted from the test.
+     */
+    internal var pbkdf2: (PBEKeySpec) -> ByteArray = ::defaultPbkdf2
+
+    internal fun resetPbkdf2ForTest() {
+        pbkdf2 = ::defaultPbkdf2
+    }
+
+    private fun defaultPbkdf2(spec: PBEKeySpec): ByteArray =
+        SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+
     fun deriveKey(passphrase: String, salt: ByteArray, iterations: Int): ByteArray {
         require(passphrase.isNotEmpty()) { "passphrase must not be empty" }
+        require(passphrase.length <= MAX_PASSPHRASE_CHARS) {
+            "passphrase longer than $MAX_PASSPHRASE_CHARS characters refused"
+        }
         require(iterations >= MIN_ITERATIONS) { "kdf iterations below $MIN_ITERATIONS refused" }
+        require(iterations <= MAX_ITERATIONS) { "kdf iterations above $MAX_ITERATIONS refused" }
         val spec = PBEKeySpec(passphrase.toCharArray(), salt, iterations, KEY_LEN_BITS)
         return try {
-            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-                .generateSecret(spec)
-                .encoded
+            pbkdf2(spec)
         } finally {
             spec.clearPassword()
         }
