@@ -1,8 +1,9 @@
 //! Vault path resolution + atomic writes (temp-in-same-dir → fsync → rename).
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::Serialize;
 
@@ -103,16 +104,24 @@ fn fsync_and_replace(tmp_path: &Path, target: &Path) -> Result<(), ChronicleErro
     Ok(())
 }
 
-pub fn atomic_write_text(path: &Path, text: &str) -> Result<(), ChronicleError> {
+static ATOMIC_WRITE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn atomic_write_via_temp(path: &Path, data: &[u8]) -> Result<(), ChronicleError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let n = ATOMIC_WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(".{}.tmp", std::process::id()));
+    tmp.push(format!(".{}.{}.tmp", std::process::id(), n));
     let tmp_path = PathBuf::from(tmp);
     {
-        let mut f = File::create(&tmp_path)?;
-        f.write_all(text.as_bytes())?;
+        // create_new fails with EEXIST on a planted name, including a symlink,
+        // and does not follow that symlink.
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        f.write_all(data)?;
         f.sync_all()?;
     }
     match fsync_and_replace(&tmp_path, path) {
@@ -124,25 +133,12 @@ pub fn atomic_write_text(path: &Path, text: &str) -> Result<(), ChronicleError> 
     }
 }
 
+pub fn atomic_write_text(path: &Path, text: &str) -> Result<(), ChronicleError> {
+    atomic_write_via_temp(path, text.as_bytes())
+}
+
 pub fn atomic_write_bytes(path: &Path, data: &[u8]) -> Result<(), ChronicleError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(format!(".{}.tmp", std::process::id()));
-    let tmp_path = PathBuf::from(tmp);
-    {
-        let mut f = File::create(&tmp_path)?;
-        f.write_all(data)?;
-        f.sync_all()?;
-    }
-    match fsync_and_replace(&tmp_path, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = fs::remove_file(&tmp_path);
-            Err(e)
-        }
-    }
+    atomic_write_via_temp(path, data)
 }
 
 pub fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), ChronicleError> {
@@ -162,4 +158,53 @@ pub fn read_text_lossy(path: &Path) -> String {
     fs::read(path)
         .map(|b| String::from_utf8_lossy(&b).to_string())
         .unwrap_or_default()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn containment_atomic_write_temp_symlink_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("note.md");
+        let stolen = outside.path().join("stolen.txt");
+        fs::write(&stolen, b"original").unwrap();
+        let planted = PathBuf::from(format!("{}.{}.tmp", dest.display(), std::process::id()));
+        std::os::unix::fs::symlink(&stolen, &planted).unwrap();
+
+        atomic_write_text(&dest, "payload-not-for-outside").unwrap();
+        atomic_write_bytes(&dest, b"payload-bytes").unwrap();
+
+        assert_eq!(fs::read(&stolen).unwrap(), b"original", "temp symlink was followed");
+        assert_eq!(fs::read(&dest).unwrap(), b"payload-bytes");
+        assert!(planted.symlink_metadata().unwrap().file_type().is_symlink());
+    }
+
+    #[test]
+    fn containment_atomic_write_concurrent_no_tear() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("note.md");
+        let a = "A".repeat(512 * 1024);
+        let b = "B".repeat(512 * 1024);
+        for round in 0..40 {
+            let dest_a = dest.clone();
+            let dest_b = dest.clone();
+            let payload_a = a.clone();
+            let payload_b = b.clone();
+            let left = std::thread::spawn(move || atomic_write_text(&dest_a, &payload_a));
+            let right = std::thread::spawn(move || atomic_write_text(&dest_b, &payload_b));
+            left.join().unwrap().unwrap();
+            right.join().unwrap().unwrap();
+            let got = fs::read_to_string(&dest).unwrap();
+            assert!(
+                got == a || got == b,
+                "round {round} tore the destination (len {}, distinct bytes {})",
+                got.len(),
+                got.bytes().filter(|c| *c != b'A' && *c != b'B').count()
+                    + usize::from(got.contains('A') && got.contains('B'))
+            );
+        }
+    }
 }

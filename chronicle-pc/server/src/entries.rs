@@ -83,6 +83,11 @@ pub fn save_entry(root: &Path, entry: &Entry) -> Result<PathBuf, ChronicleError>
     if !path.is_file() {
         path = entry_path_opts(root, &entry.id, false)?;
     }
+    let rel = path
+        .strip_prefix(root)
+        .map_err(|_| ChronicleError::msg("note path escapes vault root"))?;
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    let path = crate::path_map::abs_under_root(root, &rel)?;
     atomic_write_json(&path, &entry.to_disk_value())?;
     Ok(path)
 }
@@ -169,6 +174,36 @@ mod tests {
         let all = load_all_entries(root).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, "2026-08-20_101500-an");
+    }
+
+    #[test]
+    fn containment_save_entry_parent_symlink_rejected() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = vault.path();
+        std::os::unix::fs::symlink(outside.path(), root.join("_capture")).unwrap();
+        let mut entry = Entry::default();
+        entry.id = "2026-07-09_120000-pc".into();
+        entry.ts = "2026-07-09T12:00:00+00:00".into();
+        entry.kind = "log".into();
+        entry.text = "must-not-escape".into();
+
+        let saved = save_entry(root, &entry);
+        assert!(saved.is_err(), "save_entry followed a parent symlink: {saved:?}");
+        let mut leaked = Vec::new();
+        let mut stack = vec![outside.path().to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for ent in rd.flatten() {
+                let p = ent.path();
+                if ent.file_type().ok().is_some_and(|t| t.is_dir()) {
+                    stack.push(p);
+                } else if let Some(name) = p.file_name() {
+                    leaked.push(name.to_string_lossy().to_string());
+                }
+            }
+        }
+        assert!(leaked.is_empty(), "entry json landed outside the vault: {leaked:?}");
     }
 }
 

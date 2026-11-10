@@ -192,7 +192,7 @@ pub fn upsert_entry_block(
 ) -> Result<UpsertOutcome, ChronicleError> {
     let day = day.unwrap_or_else(|| entry_day(&entry.ts, &entry.id, "UTC"));
     let rel = journal_rel(day);
-    let path = root.join(&rel);
+    let path = crate::path_map::abs_under_root(root, &rel)?;
     let body = render_entry_block_body(entry, image_captions);
     let new_hash = content_hash(&body);
     let fence = wrap_entry_fence(&entry.id, &body);
@@ -387,7 +387,7 @@ pub fn amend_filed_block(
     }
     let filed_rel = validate_filed_rel(&filed_rel)
         .map_err(not_found)?;
-    let day_path = root.join(&filed_rel);
+    let day_path = crate::path_map::abs_under_root(root, &filed_rel)?;
     if !day_path.is_file() {
         return Err(not_found(format!("journal day file missing: {filed_rel}")));
     }
@@ -450,7 +450,7 @@ pub fn accept_disk_as_base(root: &Path, entry_id: &str) -> Result<serde_json::Va
         return Err(not_found(format!("entry not filed: {entry_id}")));
     }
     let filed_rel = validate_filed_rel(&filed_rel).map_err(not_found)?;
-    let day_path = root.join(&filed_rel);
+    let day_path = crate::path_map::abs_under_root(root, &filed_rel)?;
     if !day_path.is_file() {
         return Err(not_found(format!("journal day file missing: {filed_rel}")));
     }
@@ -720,5 +720,35 @@ mod tests {
         assert_eq!(res["skipped_reason"], "missing_filed_content_hash");
         assert!(!entry.get_filed());
         assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn containment_journal_upsert_parent_symlink_rejected() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = vault.path();
+        std::os::unix::fs::symlink(outside.path(), root.join("40-Journal")).unwrap();
+        let mut entry = Entry::default();
+        entry.id = "2026-07-09_120000-pc".into();
+        entry.ts = "2026-07-09T12:00:00+00:00".into();
+        entry.kind = "log".into();
+        entry.text = "must-not-escape".into();
+
+        let upserted = upsert_entry_block(root, &entry, None, None, false, false);
+        assert!(upserted.is_err(), "journal upsert followed a parent symlink: {upserted:?}");
+        let mut leaked = Vec::new();
+        let mut stack = vec![outside.path().to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for ent in rd.flatten() {
+                let p = ent.path();
+                if ent.file_type().ok().is_some_and(|t| t.is_dir()) {
+                    stack.push(p);
+                } else if let Some(name) = p.file_name() {
+                    leaked.push(name.to_string_lossy().to_string());
+                }
+            }
+        }
+        assert!(leaked.is_empty(), "journal day file landed outside the vault: {leaked:?}");
     }
 }
