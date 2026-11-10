@@ -61,55 +61,148 @@ export type RequestOpts = {
   signal?: AbortSignal
 }
 
-/** Cached pairing token from GET /connect; `undefined` = not fetched yet. */
+/** Cached pairing token from GET /connect; `undefined` = not fetched yet, `null` = fetched and absent. */
 let lanToken: string | null | undefined
-let lanTokenPromise: Promise<string | null> | null = null
+let cacheGeneration = 0
+
+type TokenWaiter = {
+  resolve: (token: string | null) => void
+  reject: (err: unknown) => void
+  signal?: AbortSignal
+  onAbort: () => void
+}
+
+type ConnectFlight = {
+  controller: AbortController
+  waiters: Set<TokenWaiter>
+  generation: number
+}
+
+/** One shared GET /connect. Its signal is not any caller's signal. */
+let connectFlight: ConnectFlight | null = null
+
+function abortException(signal?: AbortSignal): DOMException {
+  const reason: unknown = signal?.reason
+  if (reason instanceof DOMException && reason.name === 'AbortError') return reason
+  return new DOMException('The operation was aborted.', 'AbortError')
+}
+
+function detachWaiter(waiter: TokenWaiter): void {
+  waiter.signal?.removeEventListener('abort', waiter.onAbort)
+}
+
+function isCurrentFlight(flight: ConnectFlight): boolean {
+  return flight.generation === cacheGeneration && connectFlight === flight
+}
+
+function settleFlight(flight: ConnectFlight, settle: (waiter: TokenWaiter) => void): void {
+  if (connectFlight === flight) connectFlight = null
+  const waiters = [...flight.waiters]
+  flight.waiters.clear()
+  for (const waiter of waiters) {
+    detachWaiter(waiter)
+    settle(waiter)
+  }
+}
 
 /** Test helper — clears the lazy LAN token cache. */
 export function resetLanAuthTokenCache(): void {
+  cacheGeneration += 1
   lanToken = undefined
-  lanTokenPromise = null
+  const flight = connectFlight
+  connectFlight = null
+  if (!flight) return
+  settleFlight(flight, (waiter) => {
+    waiter.reject(abortException(waiter.signal))
+  })
+  flight.controller.abort()
 }
 
 function isConnectPath(path: string): boolean {
   return path === '/connect' || path.startsWith('/connect?')
 }
 
-async function fetchLanToken(signal?: AbortSignal): Promise<string | null> {
-  const res = await fetch(`${BASE}/connect`, { signal })
-  if (!res.ok) return null
-  const body = (await res.json()) as ConnectInfo
-  const token = typeof body.token === 'string' && body.token.length > 0 ? body.token : null
-  return token
+function connectToken(body: ConnectInfo): string | null {
+  return typeof body.token === 'string' && body.token.length > 0 ? body.token : null
+}
+
+function dropWaiter(flight: ConnectFlight, waiter: TokenWaiter): void {
+  if (!flight.waiters.delete(waiter)) return
+  detachWaiter(waiter)
+  waiter.reject(abortException(waiter.signal))
+  if (flight.waiters.size === 0 && connectFlight === flight) {
+    connectFlight = null
+    flight.controller.abort()
+  }
+}
+
+function addWaiter(flight: ConnectFlight, signal?: AbortSignal): Promise<string | null> {
+  return new Promise<string | null>((resolve, reject) => {
+    const waiter: TokenWaiter = {
+      resolve,
+      reject,
+      signal,
+      onAbort: () => {},
+    }
+    waiter.onAbort = () => {
+      dropWaiter(flight, waiter)
+    }
+    if (signal?.aborted) {
+      reject(abortException(signal))
+      return
+    }
+    flight.waiters.add(waiter)
+    signal?.addEventListener('abort', waiter.onAbort)
+  })
+}
+
+async function runConnect(flight: ConnectFlight): Promise<void> {
+  try {
+    const res = await fetch(`${BASE}/connect`, { signal: flight.controller.signal })
+    if (!isCurrentFlight(flight)) return
+    if (!res.ok) {
+      throw new ApiError(res.statusText || `GET /connect failed (${res.status})`, res.status, null)
+    }
+    const token = connectToken((await res.json()) as ConnectInfo)
+    if (!isCurrentFlight(flight)) return
+    lanToken = token
+    settleFlight(flight, (waiter) => {
+      waiter.resolve(token)
+    })
+  } catch (err: unknown) {
+    if (!isCurrentFlight(flight)) return
+    settleFlight(flight, (waiter) => {
+      waiter.reject(err)
+    })
+  }
+}
+
+function startConnectFlight(): ConnectFlight {
+  const flight: ConnectFlight = {
+    controller: new AbortController(),
+    waiters: new Set(),
+    generation: cacheGeneration,
+  }
+  connectFlight = flight
+  // Register waiters synchronously before the fetch so a sync abort or failure cannot settle an empty set.
+  queueMicrotask(() => {
+    if (!isCurrentFlight(flight)) return
+    void runConnect(flight)
+  })
+  return flight
 }
 
 /**
  * Lazily load the serve pairing token (GET /connect is auth-exempt).
- * Returns null when loopback /connect omits the token or auth is off.
- * Attach the header on all API requests when a token is available.
+ * A successful response is cached, including null when the token is missing or empty.
+ * A failed /connect is not cached and rejects this caller. The shared fetch uses its
+ * own AbortController and is aborted only after every waiter has aborted.
  */
 export async function ensureLanAuthToken(signal?: AbortSignal): Promise<string | null> {
   if (lanToken !== undefined) return lanToken
-  if (!lanTokenPromise) {
-    lanTokenPromise = fetchLanToken(signal)
-      .then((token) => {
-        lanToken = token
-        return token
-      })
-      .catch((err: unknown) => {
-        // Propagate abort so callers can cancel; other failures → no token.
-        if (err instanceof DOMException && err.name === 'AbortError') throw err
-        if (err && typeof err === 'object' && 'name' in err && (err as { name: string }).name === 'AbortError') {
-          throw err
-        }
-        lanToken = null
-        return null
-      })
-      .finally(() => {
-        lanTokenPromise = null
-      })
-  }
-  return lanTokenPromise
+  if (signal?.aborted) throw abortException(signal)
+  const flight = connectFlight ?? startConnectFlight()
+  return addWaiter(flight, signal)
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
