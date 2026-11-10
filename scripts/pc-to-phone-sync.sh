@@ -20,6 +20,7 @@ SKIP_LAUNCH=0
 SKIP_ANDROID=0
 SKIP_PUSH=0
 DRY_RUN=0
+FORCE_UNMARKED_DIR=0
 
 usage() {
   cat <<'EOF'
@@ -28,7 +29,9 @@ Usage: pc-to-phone-sync.sh [options]
   Merge-push Mac vault → phone over ADB, then launch PC + installDebug.
 
 Options:
-  --phone-dir PATH   Phone vault path (or set CHRONICLE_PHONE_DIR)
+  --phone-dir PATH       Phone vault path (or set CHRONICLE_PHONE_DIR)
+  --force-unmarked-dir  Extract even without config.json and _capture or 40-Journal.
+                        Does not allow /sdcard or /storage/emulated/0.
   --skip-process     Skip chronicle process
   --skip-launch      Skip launching Chronicle PC
   --skip-android     Skip gradlew installDebug + am start
@@ -72,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --skip-launch) SKIP_LAUNCH=1; shift ;;
     --skip-android) SKIP_ANDROID=1; shift ;;
     --skip-push) SKIP_PUSH=1; shift ;;
+    --force-unmarked-dir) FORCE_UNMARKED_DIR=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown flag: $1 (try --help)" ;;
@@ -114,23 +118,42 @@ if [[ ${#DEVICES[@]} -gt 1 && -z "${ANDROID_SERIAL:-}" ]]; then
 fi
 ok "adb device ${ANDROID_SERIAL:-${DEVICES[0]}}"
 
+# Read the full java -version stream. Piping through `head` closes the pipe;
+# JDK 21 then dies with SIGPIPE (141) and pipefail rejects a good toolchain.
+java_is_21() {
+  local bin="$1" out line
+  out="$("$bin" -version 2>&1)" || return 1
+  [[ -n "$out" ]] || return 1
+  line="${out%%$'\n'*}"
+  [[ -n "$line" && "$line" == *'version "21'* ]]
+}
+
 resolve_java21() {
-  local cand
+  local cand tool
+  # An explicit JAVA_HOME is the toolchain. Do not substitute another JDK when
+  # that java exists but is not 21, prints no version, or crashes.
+  if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" ]]; then
+    if java_is_21 "${JAVA_HOME}/bin/java"; then
+      printf '%s\n' "$JAVA_HOME"
+      return 0
+    fi
+    return 1
+  fi
   for cand in \
-    "${JAVA_HOME:-}" \
     /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
     /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
   do
-    if [[ -n "$cand" && -x "$cand/bin/java" ]]; then
-      if "$cand/bin/java" -version 2>&1 | head -1 | grep -q 'version "21'; then
-        echo "$cand"
-        return 0
-      fi
+    if [[ -x "$cand/bin/java" ]] && java_is_21 "$cand/bin/java"; then
+      printf '%s\n' "$cand"
+      return 0
     fi
   done
-  if cand="$(/usr/libexec/java_home -v 21 2>/dev/null)"; then
-    echo "$cand"
-    return 0
+  tool="${CHRONICLE_JAVA_HOME_TOOL:-/usr/libexec/java_home}"
+  if [[ -x "$tool" ]]; then
+    if cand="$("$tool" -v 21 2>/dev/null)" && [[ -n "$cand" ]]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
   fi
   return 1
 }
@@ -219,7 +242,7 @@ phone_dir_looks_like_vault() {
 
 decode_vault_uri_to_path() {
   # Best-effort: run-as prefs → primary: External Storage only.
-  local xml path
+  local xml path py_status=0
   if [[ "$CURRENT_USER" != "0" ]]; then
     warn "non-user-0 (user=$CURRENT_USER); prefs decode skipped — use --phone-dir"
     return 1
@@ -248,15 +271,87 @@ volume, rel = tree_id.split(":", 1)
 if volume != "primary":
     sys.exit(3)
 rel = rel.lstrip("/")
-print("/sdcard/" + rel if rel else "/sdcard")
+if rel == "":
+    sys.stderr.write("vault_uri has an empty relative path\n")
+    sys.exit(4)
+print("/sdcard/" + rel)
 '
-  )" || return 1
+  )" || py_status=$?
+  # Exit 4 is a hard failure: an empty relative tree id must not fall through to probe.
+  if [[ "$py_status" -eq 4 ]]; then
+    return 4
+  fi
+  if [[ "$py_status" -ne 0 ]]; then
+    return 1
+  fi
   [[ -n "$path" ]] || return 1
   if adb shell "test -d $(shq "$path")" >/dev/null 2>&1; then
     echo "$path"
     return 0
   fi
   return 1
+}
+
+# Lexical only: no realpath and no adb. Trailing slashes, "." and ".." collapse.
+normalize_phone_path() (
+  set -f
+  local p="$1" seg abs=0 joined
+  local -a parts=() segs=()
+  case "$p" in
+    /*) abs=1 ;;
+  esac
+  while [[ "$p" == */ && "$p" != "/" ]]; do
+    p="${p%/}"
+  done
+  # Split on "/" only. Pop ".." with the default IFS: bash 3.2 joins a
+  # ${array[@]:offset:length} slice on a space while IFS is "/".
+  local IFS=/
+  for seg in $p; do
+    segs+=("$seg")
+  done
+  IFS=$' \t\n'
+  # bash 3.2 with set -u rejects "${array[@]}" when the array is empty.
+  if [[ ${#segs[@]} -gt 0 ]]; then
+    for seg in "${segs[@]}"; do
+      case "$seg" in
+        ""|.) continue ;;
+        ..)
+          if [[ ${#parts[@]} -gt 1 ]]; then
+            parts=("${parts[@]:0:${#parts[@]}-1}")
+          elif [[ ${#parts[@]} -eq 1 ]]; then
+            parts=()
+          fi
+          ;;
+        *) parts+=("$seg") ;;
+      esac
+    done
+  fi
+  joined=""
+  if [[ ${#parts[@]} -gt 0 ]]; then
+    for seg in "${parts[@]}"; do
+      if [[ -z "$joined" ]]; then
+        joined="$seg"
+      else
+        joined="${joined}/${seg}"
+      fi
+    done
+  fi
+  if [[ "$abs" -eq 1 ]]; then
+    if [[ -z "$joined" ]]; then
+      printf '/\n'
+    else
+      printf '/%s\n' "$joined"
+    fi
+  else
+    printf '%s\n' "$joined"
+  fi
+)
+
+phone_dir_is_storage_root() {
+  case "$1" in
+    /|/sdcard|/storage/emulated/0) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 probe_phone_dirs() {
@@ -276,27 +371,50 @@ probe_phone_dirs() {
 }
 
 resolve_phone_dir() {
-  local found
+  local found decode_rc=0
   if [[ -n "$PHONE_DIR_FLAG" ]]; then
     PHONE_DIR="$PHONE_DIR_FLAG"
   elif [[ -n "${CHRONICLE_PHONE_DIR:-}" ]]; then
     PHONE_DIR="$CHRONICLE_PHONE_DIR"
-  elif found="$(decode_vault_uri_to_path)"; then
-    PHONE_DIR="$found"
-    ok "phone dir from vault_uri prefs: $PHONE_DIR"
-  elif found="$(probe_phone_dirs)"; then
-    PHONE_DIR="$found"
-    ok "phone dir from probe: $PHONE_DIR"
   else
-    die "could not resolve phone vault dir. Set --phone-dir or CHRONICLE_PHONE_DIR (e.g. /sdcard/Chronicle). Prefs auto-discover needs a prior debug install + folder pick."
+    # decode runs in this substitution, so a hard failure must be a status the
+    # parent can see. return 4 is an empty relative tree id; do not probe.
+    found="$(decode_vault_uri_to_path)" || decode_rc=$?
+    if [[ "$decode_rc" -eq 0 ]]; then
+      PHONE_DIR="$found"
+      ok "phone dir from vault_uri prefs: $PHONE_DIR"
+    elif [[ "$decode_rc" -eq 4 ]]; then
+      die "vault_uri has an empty relative path"
+    elif found="$(probe_phone_dirs)"; then
+      PHONE_DIR="$found"
+      ok "phone dir from probe: $PHONE_DIR"
+    else
+      die "could not resolve phone vault dir. Set --phone-dir or CHRONICLE_PHONE_DIR (e.g. /sdcard/Chronicle). Prefs auto-discover needs a prior debug install + folder pick."
+    fi
   fi
 
   if [[ "$CURRENT_USER" != "0" && -z "$PHONE_DIR_FLAG" && -z "${CHRONICLE_PHONE_DIR:-}" ]]; then
     die "work profile / non-user-0 requires --phone-dir or CHRONICLE_PHONE_DIR"
   fi
 
-  # Explicit paths: ensure dir exists (create) or already looks usable.
+  PHONE_DIR="$(normalize_phone_path "$PHONE_DIR")"
+  # Roots are refused before --force-unmarked-dir is consulted.
+  if phone_dir_is_storage_root "$PHONE_DIR"; then
+    die "refusing phone vault root ${PHONE_DIR}; shared storage root is not a vault"
+  fi
+
+  # A missing directory fails the marker check. Do not mkdir or tar it unless forced.
+  if ! phone_dir_looks_like_vault "$PHONE_DIR"; then
+    if [[ "$FORCE_UNMARKED_DIR" -ne 1 ]]; then
+      die "phone dir is not a Chronicle vault (needs config.json and _capture or 40-Journal): ${PHONE_DIR}"
+    fi
+    warn "phone dir has no vault markers; --force-unmarked-dir set: ${PHONE_DIR}"
+  fi
+
   if ! adb shell "test -d $(shq "$PHONE_DIR")" >/dev/null 2>&1; then
+    if [[ "$FORCE_UNMARKED_DIR" -ne 1 ]]; then
+      die "phone dir is not a Chronicle vault (needs config.json and _capture or 40-Journal): ${PHONE_DIR}"
+    fi
     if [[ "$DRY_RUN" -eq 1 ]]; then
       warn "phone dir does not exist yet (would mkdir -p): $PHONE_DIR"
     else
@@ -358,10 +476,30 @@ if [[ "$SKIP_PUSH" -eq 0 ]]; then
     ok "dry-run — skipping adb push/extract"
   else
     warn "pause Syncthing on Mac and phone during this push to avoid races"
-    adb shell "mkdir -p $(shq "$PHONE_DIR")" >/dev/null
+    if phone_dir_is_storage_root "$PHONE_DIR"; then
+      die "refusing phone vault root ${PHONE_DIR}; shared storage root is not a vault"
+    fi
+    if ! phone_dir_looks_like_vault "$PHONE_DIR" && [[ "$FORCE_UNMARKED_DIR" -ne 1 ]]; then
+      die "phone dir is not a Chronicle vault (needs config.json and _capture or 40-Journal): ${PHONE_DIR}"
+    fi
+    if [[ "$FORCE_UNMARKED_DIR" -eq 1 ]] || phone_dir_looks_like_vault "$PHONE_DIR"; then
+      adb shell "mkdir -p $(shq "$PHONE_DIR")" >/dev/null
+    fi
     adb push "$LOCAL_TAR" "$REMOTE_TAR" >/dev/null
     # Merge extract only — never delete phone-only files.
-    adb shell "tar -xf $(shq "$REMOTE_TAR") -C $(shq "$PHONE_DIR") && rm -f $(shq "$REMOTE_TAR")"
+    # adb shell often exits 0 when the remote command fails, so the remote
+    # shell prints its own status. Do not roll back; that would delete phone files.
+    q_tar="$(shq "$REMOTE_TAR")"
+    q_dir="$(shq "$PHONE_DIR")"
+    remote_cmd="tar -xf ${q_tar} -C ${q_dir} && rm -f ${q_tar}; printf '%s\n' __CHRONICLE_RC__:\$?"
+    remote_out="$(adb shell "$remote_cmd")" || die "adb shell failed during extract; already-written archive members were left on the phone"
+    remote_status="$(printf '%s\n' "$remote_out" | tr -d '\r' | awk -F: '/^__CHRONICLE_RC__:[0-9]+$/ {s=$2} END {print s}')"
+    if [[ ! "$remote_status" =~ ^[0-9]+$ ]]; then
+      die "extract failed (remote status missing); already-written archive members were left on the phone"
+    fi
+    if [[ "$remote_status" -ne 0 ]]; then
+      die "extract failed (remote status ${remote_status}); already-written archive members were left on the phone"
+    fi
     ok "merge-extracted ustar into $PHONE_DIR"
 
     # Verify: spot MD5s
