@@ -2,7 +2,9 @@
 
 Prose SoT = MD block body. Structured SoT (mood/tags/type/ts/media) stays in JSON.
 Amend gate: rewrite block iff on-disk content hash == entry.filed_content_hash.
-Missing filed_content_hash with an existing fence → skip (never amend).
+Missing filed_content_hash with an existing fence → skip (never amend),
+except when the on-disk body already hashes to the bytes we would write:
+that crash window is `repair` (stamp only, no rewrite).
 Insert: missing fence → append. Never whole-file regen of journal.
 """
 
@@ -16,8 +18,8 @@ from pathlib import Path
 from .entries import entry_day, entry_path, load_entry, save_entry
 from .lock import vault_process_lock
 from .models import Entry
-from .paths import atomic_write_text, content_hash
-from .vault_paths import JOURNAL_DIR
+from .paths import atomic_write_bytes, atomic_write_text, content_hash
+from .vault_paths import JOURNAL_DIR, journal_day_path
 
 log = logging.getLogger("chronicle.journal")
 
@@ -177,7 +179,9 @@ def upsert_entry_block(
 
     Amend only when on-disk hash == filed_content_hash (untouched), unless force.
     If a fence exists and filed_content_hash is missing → skip (never amend),
-    even when force=True — avoids wiping Obsidian/human prose.
+    even when force=True — avoids wiping Obsidian/human prose. The one exception
+    is a fence whose body already hashes to new_hash: return `repair` and do
+    not rewrite. A failed or non-UTF-8 read raises and leaves the bytes alone.
 
     Returns dict with keys: action, path, hash, skipped_reason?
     """
@@ -206,6 +210,14 @@ def upsert_entry_block(
         # Amend gate — never overwrite an existing fence without a filed hash.
         # Missing filed_content_hash + fence present is a conflict (even with force).
         if not filed_hash:
+            if disk_hash == new_hash:
+                # Crash window: the fence is already what we would write.
+                # Stamp on the way out; do not rewrite. Force does not matter.
+                return {
+                    "action": "repair",
+                    "path": rel,
+                    "hash": new_hash,
+                }
             return {
                 "action": "skip",
                 "path": rel,
@@ -358,6 +370,15 @@ def accept_disk_as_base(root: Path, entry_id: str) -> dict:
         }
 
 
+def _restore_day_bytes(path: Path, prior: bytes | None) -> None:
+    """Put back the day file captured before this call wrote it."""
+    if prior is None:
+        if path.is_file():
+            path.unlink()
+        return
+    atomic_write_bytes(path, prior)
+
+
 def mark_filed(root: Path, entry: Entry, *, block_hash: str, filed_path: str) -> Entry:
     """Set filed fields on entry and persist (in-place; no archived/ move)."""
     entry.filed = True
@@ -380,10 +401,18 @@ def file_entry(
     force: bool = False,
 ) -> dict:
     """
-    Atomicity: write MD block → set filed=true + filed_content_hash + filed_path.
+    Write the MD block, then set filed=true + filed_content_hash + filed_path.
+
+    If mark_filed fails after this call wrote the day file, the previous bytes
+    are restored and the error is re-raised. A kill between those two writes
+    is recovered on the next call (`repair` when the fence hash matches).
     """
     if not is_file_ready(entry):
         return {"action": "skip", "skipped_reason": "not_file_ready", "id": entry.id}
+
+    day = entry_day(entry)
+    day_path = journal_day_path(root, day.isoformat())
+    prior_bytes = day_path.read_bytes() if day_path.is_file() else None
 
     result = upsert_entry_block(
         root,
@@ -402,9 +431,19 @@ def file_entry(
     if dry_run:
         return {**result, "id": entry.id, "filed": False}
 
-    if result["action"] in ("insert", "amend", "unchanged"):
+    if result["action"] in ("insert", "amend", "unchanged", "repair"):
         if not get_filed(entry) or result["action"] != "unchanged":
-            mark_filed(root, entry, block_hash=result["hash"], filed_path=result["path"])
+            try:
+                mark_filed(root, entry, block_hash=result["hash"], filed_path=result["path"])
+            except Exception as exc:  # noqa: BLE001 — any stamp failure must roll the day file back
+                if result["action"] in ("insert", "amend"):
+                    try:
+                        _restore_day_bytes(day_path, prior_bytes)
+                    except Exception as restore_exc:  # noqa: BLE001 — report restore failure with the stamp error
+                        raise RuntimeError(
+                            f"mark_filed failed ({exc}); restoring the day file also failed ({restore_exc})"
+                        ) from exc
+                raise
         return {**result, "id": entry.id, "filed": True}
 
     if result["action"].startswith("would_"):

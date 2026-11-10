@@ -11,7 +11,7 @@ use crate::entries as store;
 use crate::errors::ChronicleError;
 use crate::lock::vault_lock;
 use crate::models::Entry;
-use crate::paths::{atomic_write_text, content_hash};
+use crate::paths::{atomic_write_bytes, atomic_write_text, content_hash};
 use crate::timeutil::entry_day;
 
 pub fn journal_rel(day: NaiveDate) -> String {
@@ -151,8 +151,37 @@ pub struct UpsertOutcome {
 
 const DRY_PREFIX: &str = "would_";
 
-/// upsert_entry_block — exact gate order; force never overrides the
-/// missing-filed-hash gate; splice failure degrades to append "insert".
+/// Day bytes captured before a write so a failed `mark_filed` can put them back.
+enum DayPrior {
+    Missing,
+    Bytes(Vec<u8>),
+}
+
+fn read_day_prior(path: &Path) -> Result<DayPrior, ChronicleError> {
+    if path.is_file() {
+        Ok(DayPrior::Bytes(std::fs::read(path)?))
+    } else {
+        Ok(DayPrior::Missing)
+    }
+}
+
+fn restore_day_prior(path: &Path, prior: &DayPrior) -> Result<(), ChronicleError> {
+    match prior {
+        DayPrior::Missing => {
+            if path.is_file() {
+                std::fs::remove_file(path)?;
+            }
+            Ok(())
+        }
+        DayPrior::Bytes(bytes) => atomic_write_bytes(path, bytes),
+    }
+}
+
+/// upsert_entry_block — exact gate order. A failed or non-UTF-8 read is an
+/// error and does not rewrite the file. A fence whose body already hashes to
+/// `new_hash` but has no filed hash is `repair` (no rewrite). A divergent
+/// fence with no filed hash stays `missing_filed_content_hash`, force included.
+/// Splice failure degrades to append "insert".
 pub fn upsert_entry_block(
     root: &Path,
     entry: &Entry,
@@ -169,7 +198,7 @@ pub fn upsert_entry_block(
     let fence = wrap_entry_fence(&entry.id, &body);
 
     let existing: Option<String> = if path.is_file() {
-        Some(std::fs::read_to_string(&path).unwrap_or_default())
+        Some(std::fs::read_to_string(&path)?)
     } else {
         None
     };
@@ -189,6 +218,16 @@ pub fn upsert_entry_block(
             let disk_hash = disk_hash.clone();
             let filed_hash = entry.get_filed_hash();
             if filed_hash.is_none() {
+                if disk_hash == new_hash {
+                    // Crash window: fence already matches. Stamp on the way out;
+                    // do not rewrite the day file. Force does not change this.
+                    return Ok(UpsertOutcome {
+                        action: "repair".into(),
+                        path: rel,
+                        hash: new_hash,
+                        skipped_reason: None,
+                    });
+                }
                 (
                     "skip".into(),
                     Some("missing_filed_content_hash".into()),
@@ -270,6 +309,9 @@ pub fn file_entry(
             "id": entry.id,
         }));
     }
+    let day = entry_day(&entry.ts, &entry.id, "UTC");
+    let day_path = root.join(journal_rel(day));
+    let prior = read_day_prior(&day_path)?;
     let result = upsert_entry_block(root, entry, None, image_captions, dry_run, force)?;
     if result.action == "skip" {
         return Ok(json!({
@@ -299,7 +341,19 @@ pub fn file_entry(
     }
     let already_filed_unchanged = entry.get_filed() && result.action == "unchanged";
     if !already_filed_unchanged {
-        mark_filed(root, entry, &result.hash, &result.path)?;
+        if let Err(e) = mark_filed(root, entry, &result.hash, &result.path) {
+            // A kill between the two writes is recovered next call as `repair`.
+            // An error we can still see rolls the day file back to the bytes
+            // captured before this call wrote them.
+            if matches!(result.action.as_str(), "insert" | "amend") {
+                if let Err(restore_err) = restore_day_prior(&day_path, &prior) {
+                    return Err(ChronicleError::msg(format!(
+                        "mark_filed failed ({e}); restoring the day file also failed ({restore_err})"
+                    )));
+                }
+            }
+            return Err(e);
+        }
     }
     Ok(json!({
         "action": result.action,
@@ -550,5 +604,121 @@ mod tests {
             matches!(err, ChronicleError::JournalAmendNotFound(ref m) if m.contains("invalid filed_path")),
             "{err:?}"
         );
+    }
+
+    fn sample_entry() -> Entry {
+        serde_json::from_value(json!({
+            "version": 1,
+            "id": "2026-07-09_213045-pc",
+            "ts": "2026-07-09T21:30:45+05:30",
+            "type": "log",
+            "text": "hello world",
+            "tags": ["a"],
+            "mood": 3,
+            "processed": true,
+            "filed": false,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn upsert_does_not_clobber_non_utf8_day_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let path = root.join("40-Journal/2026-07-09.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let marker = b"# day\n\xff\xfeKEEP-MARKER";
+        std::fs::write(&path, marker).unwrap();
+        let entry = sample_entry();
+
+        let err = upsert_entry_block(root, &entry, None, None, false, false).unwrap_err();
+        assert!(matches!(err, ChronicleError::Io(_)), "{err:?}");
+        assert_eq!(std::fs::read(&path).unwrap(), marker);
+    }
+
+    #[test]
+    fn upsert_does_not_clobber_unreadable_day_file() {
+        use std::os::unix::fs::PermissionsExt;
+        // Parent mode 0o000 also denies create/rename, and is_file() is false,
+        // so that setup never reaches the failed-read clobber. File mode 0o000
+        // still lets the directory replace the inode.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let path = root.join("40-Journal/2026-07-09.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let marker = b"KEEP-UNREADABLE-MARKER\n";
+        std::fs::write(&path, marker).unwrap();
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&path, perms).unwrap();
+
+        struct Restore(std::path::PathBuf);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                let mut perms = std::fs::metadata(&self.0).unwrap().permissions();
+                perms.set_mode(0o644);
+                std::fs::set_permissions(&self.0, perms).unwrap();
+            }
+        }
+        let restore = Restore(path.clone());
+
+        let result = upsert_entry_block(root, &sample_entry(), None, None, false, false);
+        drop(restore);
+        let err = result.expect_err("mode 0o000 day file must not be read as empty");
+        assert!(matches!(err, ChronicleError::Io(_)), "{err:?}");
+        assert_eq!(std::fs::read(&path).unwrap(), marker);
+    }
+
+    fn seed_day(root: &std::path::Path, entry: &Entry, body: &str) -> (std::path::PathBuf, Vec<u8>) {
+        let path = root.join("40-Journal/2026-07-09.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let text = format!("# 2026-07-09\n\n{}", wrap_entry_fence(&entry.id, body));
+        std::fs::write(&path, &text).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        (path, bytes)
+    }
+
+    #[test]
+    fn matching_fence_without_filed_hash_repairs_stamp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut entry = sample_entry();
+        let body = render_entry_block_body(&entry, None);
+        let (path, before) = seed_day(root, &entry, &body);
+
+        let res = file_entry(root, &mut entry, None, false, false).unwrap();
+        assert_eq!(res["action"], "repair");
+        assert_eq!(res["filed"], true);
+        assert!(entry.get_filed());
+        assert_eq!(entry.get_filed_hash().as_deref(), Some(content_hash(&body).as_str()));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn matching_fence_without_filed_hash_repairs_stamp_when_forced() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut entry = sample_entry();
+        let body = render_entry_block_body(&entry, None);
+        let (path, before) = seed_day(root, &entry, &body);
+
+        let res = file_entry(root, &mut entry, None, false, true).unwrap();
+        assert_eq!(res["action"], "repair");
+        assert!(entry.get_filed());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn divergent_fence_without_filed_hash_is_not_overwritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let mut entry = sample_entry();
+        let (path, before) = seed_day(root, &entry, "HUMAN PROSE KEEP ME\n");
+
+        let res = file_entry(root, &mut entry, None, false, true).unwrap();
+        assert_eq!(res["action"], "skip");
+        assert_eq!(res["skipped_reason"], "missing_filed_content_hash");
+        assert!(!entry.get_filed());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 }
