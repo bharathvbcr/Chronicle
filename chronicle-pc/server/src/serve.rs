@@ -106,7 +106,7 @@ async fn lan_auth_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    if !state.auth_required || state.token.is_none() {
+    if !state.auth_required || !state.has_lan_credentials() {
         return next.run(req).await;
     }
     if req.method() == Method::OPTIONS {
@@ -122,9 +122,7 @@ async fn lan_auth_middleware(
         .get(TOKEN_HEADER)
         .or_else(|| req.headers().get(&TOKEN_HEADER.to_ascii_lowercase()))
         .and_then(|v| v.to_str().ok());
-    let ok = got.is_some_and(|g| {
-        openssl_ct_eq(g, state.token.as_deref().unwrap_or_default())
-    });
+    let ok = got.is_some_and(|g| verify_presented_lan_token(&state, g));
     if !ok {
         return (
             StatusCode::UNAUTHORIZED,
@@ -133,6 +131,19 @@ async fn lan_auth_middleware(
             .into_response();
     }
     next.run(req).await
+}
+
+fn verify_presented_lan_token(state: &App, presented: &str) -> bool {
+    if let Some(ref auth) = *state.session_authority.lock().unwrap() {
+        let Some(active_fp) = state.current_tls_fp() else {
+            return false;
+        };
+        return auth.verify_token(presented, &active_fp).is_ok();
+    }
+    match state.current_pairing_token() {
+        Some(expected) => openssl_ct_eq(presented, &expected),
+        None => false,
+    }
 }
 
 /// Constant-time string equality (secrets.compare_digest analogue).
@@ -336,7 +347,6 @@ pub fn prepare(config: &ServeConfig) -> Result<Bound, String> {
         }
     };
     let auth_required = !is_localhost_bind(&bind_host);
-    let token = if auth_required { Some(generate_token()) } else { None };
 
     // Anything reachable off-box gets TLS. The bearer token is a *reusable*
     // vault credential, so shipping it (and the journal traffic behind it) in
@@ -356,6 +366,23 @@ pub fn prepare(config: &ServeConfig) -> Result<Bound, String> {
         }
     } else {
         None
+    };
+    let (session_authority, token) = match (&tls_material, auth_required) {
+        (Some(m), true) => {
+            use rand::RngCore;
+            let mut secret = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut secret);
+            let auth = crate::formal_security::PinBoundSessionAuthority::new(
+                &secret,
+                &m.fingerprint_b64,
+            )
+            .map_err(|e| format!("failed to initialize pin-bound LAN session authority: {e:?}"))?;
+            crate::formal_security::volatile_zeroize(&mut secret);
+            let tok = auth.issue_token();
+            (Some(auth), Some(tok))
+        }
+        (None, true) => (None, Some(generate_token())),
+        (_, false) => (None, None),
     };
     let scheme = if tls_material.is_some() { "https" } else { "http" };
     let base = format!("{scheme}://{advertise_host}:{actual_port}");
@@ -380,7 +407,11 @@ pub fn prepare(config: &ServeConfig) -> Result<Bound, String> {
         tls: tls_material.is_some(),
         tls_fp: tls_material.as_ref().map(|m| m.fingerprint_b64.clone()),
     };
-    let state = Arc::new(App::new(config.chronicle_dir.clone(), connect_info));
+    let state = Arc::new(App::new_with_session_authority(
+        config.chronicle_dir.clone(),
+        connect_info,
+        session_authority,
+    ));
 
     // Apply config-driven LLM settings before serving.
     match crate::config::ensure_config(&config.chronicle_dir) {

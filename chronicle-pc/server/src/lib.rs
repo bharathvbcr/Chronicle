@@ -68,6 +68,7 @@ pub mod config;
 pub mod curation;
 pub mod entries;
 pub mod errors;
+pub mod formal_security;
 pub mod frontmatter;
 pub mod grok;
 pub mod index_store;
@@ -165,6 +166,8 @@ pub struct App {
     pub connect_info: ConnectInfo,
     pub token: Option<String>,
     pub auth_required: bool,
+    pub session_authority: Mutex<Option<crate::formal_security::PinBoundSessionAuthority>>,
+    active_lan_credentials: std::sync::RwLock<(Option<String>, Option<String>)>,
     pub llm: std::sync::RwLock<LlmRuntime>,
     pub rate: Mutex<RateWindow>,
     /// TTL cache for the /health provider probe (Ollama reachable + provider ok).
@@ -183,17 +186,88 @@ pub const HEALTH_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs
 
 impl App {
     pub fn new(root: PathBuf, connect_info: ConnectInfo) -> Self {
+        Self::new_with_session_authority(root, connect_info, None)
+    }
+
+    pub fn new_with_session_authority(
+        root: PathBuf,
+        connect_info: ConnectInfo,
+        authority: Option<crate::formal_security::PinBoundSessionAuthority>,
+    ) -> Self {
         let token = connect_info.token.clone();
+        let tls_fp = connect_info.tls_fp.clone();
         let auth_required = connect_info.auth_required;
         Self {
             root,
             connect_info,
-            token,
+            token: token.clone(),
             auth_required,
+            session_authority: Mutex::new(authority),
+            active_lan_credentials: std::sync::RwLock::new((token, tls_fp)),
             llm: std::sync::RwLock::new(LlmRuntime::default()),
             rate: Mutex::new(RateWindow::default()),
             health_cache: Mutex::new(None),
         }
+    }
+
+    pub fn has_lan_credentials(&self) -> bool {
+        if self.session_authority.lock().unwrap().is_some() {
+            return true;
+        }
+        self.active_lan_credentials.read().unwrap().0.is_some()
+    }
+
+    pub fn current_pairing_token(&self) -> Option<String> {
+        self.active_lan_credentials.read().unwrap().0.clone()
+    }
+
+    pub fn current_tls_fp(&self) -> Option<String> {
+        self.active_lan_credentials.read().unwrap().1.clone()
+    }
+
+    /// Mints an independent per-device token bound to the current `(epoch, tls_fp)`
+    /// when `PinBoundSessionAuthority` is active; otherwise returns the static token.
+    pub fn issue_lan_device_token(&self) -> Option<String> {
+        if let Some(ref auth) = *self.session_authority.lock().unwrap() {
+            return Some(auth.issue_token());
+        }
+        self.current_pairing_token()
+    }
+
+    /// Rotates the active LAN TLS SPKI fingerprint (`new_tls_fp`), invalidating all
+    /// tokens from prior epochs (including under `fp1 -> fp2 -> fp1` ABA rollback)
+    /// and minting a fresh pairing token for the new epoch.
+    pub fn rotate_lan_tls_pin(
+        &self,
+        new_tls_fp: &str,
+    ) -> Result<(u64, String), crate::formal_security::SecurityViolation> {
+        let mut guard = self.session_authority.lock().unwrap();
+        let auth = guard
+            .as_mut()
+            .ok_or(crate::formal_security::SecurityViolation::EmptyTlsFingerprint)?;
+        let epoch = auth.rotate_tls_pin(new_tls_fp)?;
+        let fresh_token = auth.issue_token();
+        let fp = auth.active_tls_fp().to_string();
+        let mut creds = self.active_lan_credentials.write().unwrap();
+        *creds = (Some(fresh_token.clone()), Some(fp));
+        Ok((epoch, fresh_token))
+    }
+
+    /// Revokes a single paired device's token without rotating the server TLS cert.
+    pub fn revoke_lan_token(
+        &self,
+        revoked_token: &str,
+    ) -> Result<(), crate::formal_security::SecurityViolation> {
+        let mut guard = self.session_authority.lock().unwrap();
+        let auth = guard
+            .as_mut()
+            .ok_or(crate::formal_security::SecurityViolation::MalformedToken)?;
+        auth.revoke_token(revoked_token)?;
+        let mut creds = self.active_lan_credentials.write().unwrap();
+        if creds.0.as_deref() == Some(revoked_token) {
+            creds.0 = Some(auth.issue_token());
+        }
+        Ok(())
     }
 
     pub fn apply_ollama_settings(&self, base_url: &str, num_ctx: i64, temperature: Option<f64>) {
